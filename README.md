@@ -8,34 +8,34 @@ MIT licensed. No Dock icon, no normal application window, no end-user Bun instal
 
 ![菜单栏面板预览](docs/screenshots/overview.png)
 
-## 安装：Homebrew formula（不是 cask）
+## 安装
 
 ```sh
 brew tap hyspace/copilot-bridge-menubar https://github.com/hyspace/copilot-bridge-menubar
-brew install hyspace/copilot-bridge-menubar/copilot-bridge-menubar
-copilot-bridge-menubar
+brew install --cask hyspace/copilot-bridge-menubar/copilot-bridge-menubar
 ```
 
-要求 macOS 14+、Apple Silicon。首次打开默认不启动后端，点击菜单栏图标 →「启动服务」。
+要求 macOS 14+、Apple Silicon。安装后在「应用程序」中打开 **Copilot Bridge**。
+App 位于 `/Applications/Copilot Bridge.app`。首次打开默认不启动后端，点击菜单栏图标 →「启动服务」。
 已占用的端口只会显示提示；**如果原有 CLI 正在 4142 运行，请先给 App 选择其他端口**。
 
-这是自有 tap 中的二进制 formula，不是 `homebrew/core` 条目或 cask。
+如果 Homebrew 在添加 tap 时提示未信任，先运行
+`brew trust --cask hyspace/copilot-bridge-menubar/copilot-bridge-menubar`，再重试安装。
+
 也可以下载 Release 的 `Copilot-Bridge-arm64.zip`，解压后把 App 放到 Applications。
 默认公开构建使用 ad-hoc 签名，不宣称已获 Apple Developer ID 签名/公证。
 如果 Gatekeeper 阻止从浏览器下载的副本，可自行从源码构建，或在确认来源后按 macOS 的
 “隐私与安全性 → 仍要打开”流程处理；本项目不会自动关闭 Gatekeeper 或删除隔离属性。
 
-可选开机运行：
+更新前先退出 App，再运行：
 
 ```sh
-brew services start hyspace/copilot-bridge-menubar/copilot-bridge-menubar
-# 停止 Homebrew 管理的 App
-brew services stop hyspace/copilot-bridge-menubar/copilot-bridge-menubar
+brew update
+brew upgrade --cask hyspace/copilot-bridge-menubar/copilot-bridge-menubar
 ```
 
-也可以用 App 的「登录 macOS 时打开 App」和「打开 App 时启动服务」。
-**不要同时启用 Homebrew service 和 App 登录项。** Homebrew 升级后建议重启 service；
-如果使用 App 登录项，请关闭后重新开启以更新安装位置。
+需要开机运行时，在 App 设置中启用「登录 macOS 时打开 App」；
+是否自动启动后端由「打开 App 时启动服务」单独控制。
 
 ## 功能
 
@@ -119,7 +119,7 @@ cd copilot-bridge-menubar
 cd vendor/copilot-bridge && bun install --frozen-lockfile && cd ../..
 bun test backend
 swift test --disable-sandbox
-python3 scripts/test-formula.py
+python3 scripts/test-cask.py
 python3 scripts/build-backend.py
 python3 scripts/test-auth.py
 python3 scripts/integration-test.py

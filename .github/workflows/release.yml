@@ -1,4 +1,4 @@
-name: Release and Homebrew formula
+name: Release
 on:
   push:
     tags: ["v[0-9]*.[0-9]*.[0-9]*"]
@@ -32,15 +32,14 @@ jobs:
           bun vendor/copilot-bridge/node_modules/typescript/bin/tsc --noEmit
           bun test backend
           (cd vendor/copilot-bridge && bun test)
-          python3 scripts/test-formula.py
+          python3 scripts/test-cask.py
           swift test --disable-sandbox
           python3 scripts/build-backend.py
           python3 scripts/test-auth.py
           python3 scripts/integration-test.py
           (cd vendor/copilot-bridge && bun run test:http)
           bash scripts/build-app.sh
-          test "$(build/'Copilot Bridge.app'/Contents/MacOS/CopilotBridgeMenuBar --version)" = "$VERSION"
-          test "$(lipo -archs build/'Copilot Bridge.app'/Contents/MacOS/CopilotBridgeMenuBar)" = arm64
+          python3 scripts/verify-app.py --app "build/Copilot Bridge.app" --version "$VERSION"
           CBM_TEST_BINARY="$PWD/build/Copilot Bridge.app/Contents/Resources/copilot-bridge-service" python3 scripts/integration-test.py
       - name: Publish immutable release assets
         env:
@@ -49,8 +48,8 @@ jobs:
         run: |
           gh release create "$TAG" build/Copilot-Bridge-arm64.zip build/SHA256SUMS \
             --verify-tag --title "Copilot Bridge $TAG" --generate-notes \
-            --notes "Apple Silicon, macOS 14+. Homebrew formula in this repository's tap (not cask). Ad-hoc signed; no Apple notarization is claimed. Existing CLI processes and Codex configuration are never replaced."
-      - name: Update tap formula with the actual release checksum
+            --notes "Apple Silicon, macOS 14+. Install with Homebrew or download the app below. Ad-hoc signed; no Apple notarization is claimed. Existing CLI processes and Codex configuration are never replaced."
+      - name: Update Homebrew package with the actual release checksum
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -58,17 +57,14 @@ jobs:
           git fetch origin main
           git checkout main
           git pull --ff-only origin main
-          python3 scripts/update-formula.py --version "$VERSION" --sha256 "$SHA" --repository "$GITHUB_REPOSITORY"
-          ruby -c Formula/copilot-bridge-menubar.rb
+          python3 scripts/update-cask.py --version "$VERSION" --sha256 "$SHA" --repository "$GITHUB_REPOSITORY"
+          ruby -c Casks/copilot-bridge-menubar.rb
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Formula/copilot-bridge-menubar.rb
-          git commit -m "chore(brew): publish $VERSION formula"
-          git push origin main
-      - name: Verify published formula installation
-        env:
-          HOMEBREW_NO_AUTO_UPDATE: "1"
-        run: |
-          brew tap hyspace/copilot-bridge-menubar "https://github.com/$GITHUB_REPOSITORY"
-          brew install hyspace/copilot-bridge-menubar/copilot-bridge-menubar
-          brew test hyspace/copilot-bridge-menubar/copilot-bridge-menubar
+          git add Casks/copilot-bridge-menubar.rb
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(brew): publish $VERSION"
+            git push origin main
+          fi
+      - name: Verify published app installation
+        run: bash scripts/test-homebrew.sh "$VERSION"

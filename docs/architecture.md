@@ -27,8 +27,7 @@ arbitrary executable through an environment variable.
 
 The menu-bar app owns one foreground service. It is not a double-forked daemon:
 ownership and exit state remain observable. Login startup uses Apple's
-`SMAppService.mainApp`; Homebrew users may alternatively use a user launch agent
-through `brew services`. Never enable both.
+`SMAppService.mainApp`, controlled by the app's login-item setting.
 
 Stop sends SIGTERM to the exact owned `Process`. After five seconds it may send
 SIGKILL only if that same `Process` is still running. No name matching, port-based

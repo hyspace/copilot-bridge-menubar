@@ -1,28 +1,28 @@
 # Releases and Homebrew
 
-This public repository doubles as a custom Homebrew tap. It distributes a
-**formula**, not a cask. It does not claim eligibility for `homebrew/core`, whose
-policy excludes app bundles as their main formula product.
+This repository publishes a standalone macOS app and a Homebrew package.
+Installation places the app in `/Applications/Copilot Bridge.app`.
 
 1. Publish any new CLI fork commit first, then update this repository's submodule reference. Merge App changes into `main` after CI passes.
 2. Choose a new semantic version; never overwrite a published tag or asset.
 3. Tag and push:
 
    ```sh
-   git tag v0.1.0
-   git push origin v0.1.0
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
    ```
 
 4. `release.yml` checks out the pinned submodule, installs its frozen lockfile,
    tests Swift/TypeScript/auth/streaming/lifecycle on an arm64 macOS runner,
    packages and ad-hoc signs both executables, and verifies code signatures.
 5. It publishes the ZIP and SHA256SUMS, calculates the actual archive checksum,
-   updates `Formula/copilot-bridge-menubar.rb` on `main`, then installs and tests
-   the published formula.
+   updates `Casks/copilot-bridge-menubar.rb` on `main`, then installs the published
+   app and verifies its version, arm64 binaries, bundle layout and signatures.
+   The install test rejects a symlink in place of the actual app bundle.
 
 The release workflow needs only the repository `GITHUB_TOKEN` with contents write
-permission. If branch protection forbids its formula update, retain protection and
-submit the generated formula through a PR instead; do not bypass user policies.
+permission. If branch protection forbids its package update, retain protection and
+submit the generated metadata through a PR instead; do not bypass user policies.
 Third-party workflow actions are pinned to commit SHAs.
 
 The packager checks that the CLI worktree is clean and matches the recorded
@@ -40,6 +40,7 @@ maintainer's Apple account/certificate and is not silently simulated by ad-hoc s
 If you add notarization, submit the artifact with `xcrun notarytool`, wait for
 acceptance, staple the ticket, re-package, and only then calculate the release checksum.
 
-Homebrew installation does not auto-start a daemon or rewrite Codex configuration.
-`brew services` is optional and user-initiated. On removal, personal settings,
-usage history are intentionally preserved.
+Installation does not auto-start a service or rewrite Codex configuration.
+Login startup is configured in the app. Uninstallation preserves personal settings
+and usage history. Package scripts do not remove quarantine attributes or disable
+macOS security checks.
