@@ -42,11 +42,13 @@ public struct MenuView: View {
 
     private var header: some View {
         HStack(spacing: 9) {
-            Image(systemName: "point.3.connected.trianglepath.dotted")
-                .font(.system(size: 17, weight: .medium))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 28, height: 28)
-                .background(RoundedRectangle(cornerRadius: 7).fill(Color.accentColor.opacity(0.08)))
+            if let image = StatusItemIcon.make() {
+                Image(nsImage: image).renderingMode(.template).resizable()
+                    .frame(width: 18, height: 18)
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 28, height: 28)
+                    .background(RoundedRectangle(cornerRadius: 7).fill(Color.accentColor.opacity(0.08)))
+            }
             VStack(alignment: .leading, spacing: 2) {
                 Text("Copilot Bridge").font(.system(size: 13, weight: .semibold))
                 Text("Local model service").font(.system(size: 10)).foregroundStyle(.secondary)

@@ -26,6 +26,17 @@ struct QuotaPresentation {
         return unit + (usedIsDerived ? " (derived)" : "")
     }
     var remainingTitle: String { snapshot.kind == .credits ? "Credits remaining" : "Remaining" }
+    var remainingText: String {
+        if snapshot.unlimited { return "Unlimited" }
+        guard let fraction = remainingFraction else { return "—" }
+        return (fraction * 100).formatted(.number.locale(ActivityText.locale).precision(.fractionLength(0...1))) + "%"
+    }
+    var remainingHelp: String {
+        if snapshot.unlimited { return "GitHub reports an unlimited quota; no remaining percentage applies." }
+        let unit = snapshot.kind == .credits ? "credits" : "quota units"
+        return remaining.map { ActivityText.number($0) + " \(unit) remaining." }
+            ?? "The remaining amount was not reported by GitHub."
+    }
     var usedHelp: String {
         usedIsDerived
             ? "Derived from the account limit minus remaining quota, not from token counts."
@@ -71,11 +82,11 @@ struct QuotaAmounts: View {
                 }.help(presentation.usedHelp)
                 Spacer(minLength: 0)
                 VStack(alignment: .trailing, spacing: 4) {
-                    Text(snapshot.unlimited ? "Unlimited" : presentation.remaining.map(ActivityText.number) ?? "—")
+                    Text(presentation.remainingText)
                         .font(.system(size: 18, weight: .medium, design: .rounded))
                     Label(presentation.remainingTitle, systemImage: "circle.fill")
                         .labelStyle(QuotaLegendStyle(color: .green))
-                }
+                }.help(presentation.remainingHelp)
             }
             .monospacedDigit().lineLimit(1).minimumScaleFactor(0.75)
             if let fraction = presentation.remainingFraction {

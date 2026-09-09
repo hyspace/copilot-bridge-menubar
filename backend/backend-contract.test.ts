@@ -20,7 +20,7 @@ test("pinned backend emits raw server billing on the authenticated usage channel
       .map(line=>JSON.parse(line.slice(BRIDGE_EVENT_PREFIX.length)));
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({kind:"usage",id:"billing-contract",
-      nanoAiu:1234567891,input:100,output:20,channel:"fake-channel"});
+      nanoAiu:1234567891,input:100,output:20,tokensComplete:true,tokenStatus:"reported",channel:"fake-channel"});
   } finally {spy.mockRestore()}
 });
 test("pinned CLI exports the native application's authenticated event contract",()=>{

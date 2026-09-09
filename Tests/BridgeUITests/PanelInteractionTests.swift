@@ -127,4 +127,29 @@ final class PanelInteractionTests: XCTestCase {
             }
         }
     }
+    func testMenuMarkUsesTheAppIconsThreeHollowNodesAndTransparentBackground() throws {
+        let image = try XCTUnwrap(StatusItemIcon.make())
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 144,
+            pixelsHigh: 144, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+            isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+        let context = try XCTUnwrap(NSGraphicsContext(bitmapImageRep: bitmap))
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
+        context.cgContext.clear(CGRect(x: 0, y: 0, width: 144, height: 144))
+        image.draw(in: NSRect(x: 0, y: 0, width: 144, height: 144))
+        context.cgContext.flush()
+        NSGraphicsContext.restoreGraphicsState()
+        func alpha(x: Int, y: Int) -> CGFloat { bitmap.colorAt(x: x, y: y)?.alphaComponent ?? -1 }
+        XCTAssertEqual(image.size, NSSize(width: 18, height: 18))
+        XCTAssertLessThan(alpha(x: 0, y: 0), 0.01)
+        // AppIcon's left, apex and right hollow nodes, with y flipped for bitmap rows.
+        for (x, y) in [(24, 99), (72, 36), (120, 99)] {
+            XCTAssertLessThan(alpha(x: x, y: y), 0.05)
+            XCTAssertGreaterThan(alpha(x: x + 10, y: y), 0.8)
+        }
+        if let output = ProcessInfo.processInfo.environment["CBM_RENDER_OUTPUT"] {
+            let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+            try png.write(to: URL(fileURLWithPath: output).appendingPathComponent("menu-mark.png"))
+        }
+    }
 }

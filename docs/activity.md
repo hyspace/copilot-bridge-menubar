@@ -49,10 +49,51 @@ number as `nanoAiu`; the app aggregates those units and converts them for displa
   values are not changed into zero-cost requests.
 - Daily values are grouped by the upstream attempt's local start date, matching
   the token accounting timestamp.
+- Supervised Chat streaming requests ask for `stream_options.include_usage`.
+  The observer reads the final usage-only chunk after `finish_reason`, rather
+  than treating the first stop marker as the end of accounting.
+  Microsoft's [Copilot stream definition](https://github.com/microsoft/vscode/blob/0af2bfdddee61954b27fdb831f7a8b20a139126b/extensions/copilot/src/platform/networking/common/fetch.ts#L334-L347)
+  says its proxy already enables usage. The explicit option is compatibility
+  hardening, not proof that a missing option caused past Copilot omissions.
+  An interrupted stream can still end before the final usage chunk arrives.
+- A completion event can repeat the generated output before its usage object.
+  The parser now accepts the same 8M-character frame budget as the Responses
+  normalizer, rather than silently discarding events above 256 KiB. Exceeding
+  that bounded budget is diagnosed, not changed into zero usage.
+- Supported aliases include Responses/Chat usage, sibling envelope usage,
+  cache-read fields and exact `total_tokens` arithmetic when one side is absent.
+  Native Anthropic cache reads/writes are included in total input; OpenAI cached
+  input is not added twice.
+- Cancellation after a protocol completion is not a failed request. Counters
+  observed before an interrupted stream ends are retained as partial, not
+  presented as complete token coverage.
+  Initial/placeholder usage is not promoted to a complete report merely because
+  a stop marker arrives; the protocol's final usage must actually be observed.
+  A failed or length-limited generation can still report exact final token usage:
+  request outcome and token-report completeness are tracked independently.
 
-The detail panel shows billing coverage, such as **Billing reported for 3 of 4
-requests**. A partial sum is labeled **reported credits used**. When every charge
+The detail panel shows token and credit coverage separately, such as
+**Tokens: 3/4 requests · Credits: 2/4**. A partial sum is labeled
+**reported credits used**. When every charge
 is missing, it says **Credits unreported**. It does not estimate the missing part.
+Logs explain missing token usage using bounded, predefined reasons (unreported,
+partial, interrupted, parser limit or invalid JSON), never response content.
+
+### CC Switch reference
+
+We reviewed CC Switch's
+[proxy usage parser](https://github.com/farion1231/cc-switch/blob/f3b18df12007d0fd79fd8ad8d310880664015197/src-tauri/src/proxy/usage/parser.rs),
+[streaming conversion](https://github.com/farion1231/cc-switch/blob/f3b18df12007d0fd79fd8ad8d310880664015197/src-tauri/src/proxy/providers/streaming.rs)
+and [Codex session usage importer](https://github.com/farion1231/cc-switch/blob/f3b18df12007d0fd79fd8ad8d310880664015197/src-tauri/src/services/session_usage_codex.rs).
+These are design references, not copied or bundled source.
+
+CC Switch also reads exact token counters from client session logs and handles
+cross-source/replayed snapshots. This app does not add client-session totals to
+upstream attempt totals: without reliable cross-source request identities that
+would double count some requests and misattribute retries. No session content is
+scanned, and no tokenizer/character estimate is substituted for reported usage.
+Standalone CLI requests are not recorded by this app's private supervisor
+channel. Previously discarded counters cannot be reconstructed from aggregates.
 
 ## Account balance is separate
 
@@ -60,8 +101,10 @@ The balance card queries the bridge's `/usage` endpoint for GitHub's account-wid
 remaining quota. Other clients can affect this balance. It is never used as the
 source of a day's request costs, and no balance-difference calculation is made.
 
-The primary amount is **credits used**, on the left; **credits remaining** is
-on the right. The bar has a gray used segment on the left and a green remaining
+The primary amount is **credits used**, on the left; the **remaining percentage**
+is on the right. Hover the percentage to see the exact remaining amount.
+If only an amount is known but no limit/percentage is provided, the percentage
+stays unknown rather than being invented. The bar has a gray used segment on the left and a green remaining
 segment on the right. It uses the provider's percentage when available, otherwise
 a valid remaining-to-limit ratio. Rounded percentages do not overwrite amounts.
 GitHub's `credits_used` is preferred. For a limited quota without reported usage,

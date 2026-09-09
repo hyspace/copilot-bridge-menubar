@@ -55,6 +55,10 @@ enum ActivityText {
         if day.usage.requests == 0 { return "No requests recorded for this day." }
         return "Billing reported for \(day.usage.creditReports) of \(day.usage.requests) requests."
     }
+    static func coverageSummary(_ day: ActivityDay) -> String {
+        guard day.usage.requests > 0 else { return "No requests recorded for this day." }
+        return "Tokens: \(max(0, day.usage.requests - day.usage.unknown))/\(day.usage.requests) requests · Credits: \(day.usage.creditReports)/\(day.usage.requests)"
+    }
     static func tooltip(_ day: ActivityDay) -> String {
         var lines = [
             date(day.date),
@@ -63,6 +67,7 @@ enum ActivityText {
             "Reported input: \(day.usage.input) · Output: \(day.usage.output) · Cached: \(day.usage.cached)",
             "\(day.usage.requests) requests · \(day.usage.errors) errors",
             credits(day),
+            "Complete token usage for \(max(0, day.usage.requests - day.usage.unknown)) of \(day.usage.requests) requests.",
             coverage(day),
             "Request billing reported by Copilot; not the account balance."
         ]
@@ -180,7 +185,7 @@ struct ActivityHeatmap: View {
                         Text(ActivityText.credits(day)).monospacedDigit()
                         Spacer(minLength: 0)
                     }.font(.system(size: 10)).foregroundStyle(.secondary)
-                    Text(ActivityText.coverage(day))
+                    Text(ActivityText.coverageSummary(day))
                         .font(.system(size: 8)).foregroundStyle(.tertiary)
                 }
                 .frame(maxWidth: .infinity, minHeight: 48, alignment: .topLeading)

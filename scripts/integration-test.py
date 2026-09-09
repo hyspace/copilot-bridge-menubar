@@ -44,6 +44,18 @@ class Mock(http.server.BaseHTTPRequestHandler):
         assert self.headers.get("ChatGPT-Account-ID") is None, "OpenAI identity leaked upstream"
         body = json.loads(self.rfile.read(int(self.headers["content-length"])))
         UPSTREAM_CALLS.append(body.get("input"))
+        if self.path == "/chat/completions":
+            assert body["stream_options"]["include_usage"] is True
+            chunks = [
+                {"id":"chat-test","object":"chat.completion.chunk","model":"gpt-4o","created":1,
+                 "choices":[{"index":0,"delta":{"role":"assistant","content":"test"},"finish_reason":None}]},
+                {"id":"chat-test","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":None},
+                {"id":"chat-test","choices":[],"usage":{"prompt_tokens":13,"completion_tokens":7,
+                    "total_tokens":20,"copilot_usage":{"total_nano_aiu":50000000}}}
+            ]
+            self.send("".join(f"data: {json.dumps(e)}\n\n" for e in chunks) + "data: [DONE]\n\n",
+                      content_type="text/event-stream")
+            return
         if body.get("input") == "test-413":
             self.send("failed to parse request", status=413, content_type="text/plain")
             return
@@ -59,6 +71,11 @@ class Mock(http.server.BaseHTTPRequestHandler):
             events[-1]["response"]["usage"] = {"copilot_usage":{"total_nano_aiu":500000000}}
         if body.get("input") == "test-free":
             events[-1]["response"]["usage"]["copilot_usage"]["total_nano_aiu"] = 0
+        if body.get("input") == "test-large-completion":
+            events[-1]["response"]["output"] = [{"type":"message","content":[
+                {"type":"output_text","text":"x" * 700000}]}]
+        if body.get("input") == "test-sibling-usage":
+            events[-1]["usage"] = events[-1]["response"].pop("usage")
         self.send("".join(f"data: {json.dumps(e)}\n\n" for e in events),
                   content_type="text/event-stream")
 
@@ -115,11 +132,15 @@ with tempfile.TemporaryDirectory(prefix="cbm-integration-") as directory:
             assert fetch(p, "/v1/responses")[0] == 404  # HTTP GET is not WebSocket.
             status, data = fetch(p, "/v1/models?client_version=0.153.3")
             assert status == 200 and json.loads(data)["models"][0]["slug"] == "gpt-6-astra"
-            for text in ["hello", "test-413", "test-interrupt", "test-billing-only", "test-free"] + ["load-test"] * 100:
+            for text in ["hello", "test-413", "test-interrupt", "test-billing-only", "test-free",
+                         "test-large-completion", "test-sibling-usage"] + ["load-test"] * 100:
                 status, data = fetch(p, "/v1/responses",
                     body={"model":"gpt-6-astra","input":text,"stream":True})
                 assert status == (413 if text == "test-413" else 200)
                 if text == "hello": assert "你好" in data.decode()
+            status, data = fetch(p, "/v1/chat/completions", body={"model":"gpt-4o","stream":True,
+                "messages":[{"role":"user","content":"test-usage-tail"}]})
+            assert status == 200 and b'"prompt_tokens": 13' in data, data[:100]
             # A competing process must fail without killing the live test server.
             try:
                 competitor = subprocess.run(args, env=env, capture_output=True, timeout=8)
@@ -135,10 +156,12 @@ with tempfile.TemporaryDirectory(prefix="cbm-integration-") as directory:
             except subprocess.TimeoutExpired: child.kill(); child.wait(timeout=5)
     records = [json.loads(line[6:]) for line in stdout.read_text().splitlines() if line.startswith("@@CBM:")]
     usage = [record for record in records if record.get("kind") == "usage"]
-    assert len(usage) == 105, len(usage)
-    assert sum(record["input"] or 0 for record in usage) == 10200
-    assert sum(record["nanoAiu"] or 0 for record in usage) == 13125000000
-    assert len([r for r in usage if r["nanoAiu"] is not None]) == 103
+    assert len(usage) == 108, len(usage)
+    assert sum(record["input"] or 0 for record in usage) == 10413
+    assert sum(record["nanoAiu"] or 0 for record in usage) == 13425000000
+    assert len([r for r in usage if r["nanoAiu"] is not None]) == 106
+    assert len([r for r in usage if r["tokensComplete"] is True]) == 105
+    assert len([r for r in usage if r["tokenStatus"] == "reported"]) == 105
     assert len([r for r in usage if r["nanoAiu"] == 0]) == 1
     assert any(r["input"] is None and r["nanoAiu"] == 500000000 for r in usage)
     assert len([r for r in usage if r["outcome"] == "http_error"]) == 1
@@ -172,6 +195,7 @@ time.sleep(30)
 mock.shutdown(); mock.server_close()
 current = subprocess.run(["lsof","-tiTCP:4142","-sTCP:LISTEN"],capture_output=True,text=True).stdout.strip()
 assert ORIGINAL_PID == current, "Protected listener identity changed"
-print("PASS: compiled arm64 backend, 105 keyless fake requests, token/billing/413/interruption,")
+print("PASS: compiled arm64 backend, 108 keyless fake requests, token/billing/413/interruption,")
+print("      large completion events, sibling usage, final Chat usage-only chunks,")
 print("      catalog compatibility, no config writes, port conflict, parent-death cleanup.")
 print(f"Protected 4142 listener unchanged: {current or '(none)'}")

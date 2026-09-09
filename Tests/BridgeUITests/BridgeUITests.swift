@@ -117,4 +117,12 @@ final class BridgeUITests: XCTestCase {
         XCTAssertEqual(ActivityText.creditNumber(0.0000000005), "0.0000000005")
         XCTAssertEqual(ActivityText.creditNumber(0.0000000000001), "<0.000000000001")
     }
+    func testTokenAndCreditCoverageAreLabeledIndependently() {
+        var usage = UsageTotals()
+        usage.requests = 8; usage.unknown = 2; usage.creditReports = 0
+        let day = ActivityDay(date: Date(), usage: usage)
+        XCTAssertEqual(ActivityText.coverageSummary(day), "Tokens: 6/8 requests · Credits: 0/8")
+        XCTAssertTrue(ActivityText.tooltip(day).contains("Complete token usage for 6 of 8 requests."))
+        XCTAssertTrue(ActivityText.tooltip(day).contains("Billing reported for 0 of 8 requests."))
+    }
 }

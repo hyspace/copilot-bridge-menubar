@@ -33,6 +33,30 @@ private final class PortLease {
 
 @MainActor
 final class BridgeRuntimeTests: XCTestCase {
+    func testIncompleteTokenDiagnosticsContainOnlyKnownReasonsAndPreserveCounters() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("cbm-usage-note-\(UUID())")
+        try AppPaths.prepare(root)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let pump = try ProcessOutput(root: root, secrets: [], eventToken: "test-channel")
+        for (index, reason) in ["interrupted", "untrusted response text"].enumerated() {
+            let event: [String: Any] = [
+                "kind": "usage", "id": "partial-\(index)", "timestamp": Date().timeIntervalSince1970,
+                "model": "synthetic", "status": 200, "input": 50, "output": 3,
+                "nanoAiu": 125_000_000, "tokensComplete": false, "tokenStatus": reason,
+                "outcome": "interrupted", "channel": "test-channel"
+            ]
+            let json = String(decoding: try JSONSerialization.data(withJSONObject: event), as: UTF8.self)
+            pump.consume(Data(("@@CBM:" + json + "\n").utf8), error: false)
+        }
+        let totals = try UsageStore(url: root.appendingPathComponent("usage.sqlite")).totals(today: true)
+        XCTAssertEqual(totals.input, 100)
+        XCTAssertEqual(totals.unknown, 2)
+        XCTAssertEqual(totals.creditReports, 2)
+        let logs = pump.snapshot().lines.joined(separator: "\n")
+        XCTAssertTrue(logs.contains("stream ended before protocol completion"))
+        XCTAssertFalse(logs.contains("untrusted response text"))
+        XCTAssertFalse(logs.contains("test-channel"))
+    }
     private func fixture(_ mode: String, retryScale: Double = 1,
                          startupTimeout: TimeInterval = 90) throws -> (BridgeController, URL) {
         let home = FileManager.default.temporaryDirectory.appendingPathComponent("cbm-native-test-\(UUID())")

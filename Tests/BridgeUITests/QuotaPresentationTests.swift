@@ -81,4 +81,17 @@ final class QuotaPresentationTests: XCTestCase {
         XCTAssertEqual(presentation.usedTitle, "Used (derived)")
         XCTAssertEqual(presentation.remainingTitle, "Remaining")
     }
+    func testRemainingIsAPercentageWithAnExactAmountTooltip() throws {
+        let presentation = QuotaPresentation(snapshot: try quota(
+            #""credits_used":250.25,"quota_remaining":749.75,"entitlement":1000,"percent_remaining":74.975"#))
+        XCTAssertEqual(presentation.used, 250.25)
+        XCTAssertEqual(presentation.remainingText, "75%")
+        XCTAssertEqual(presentation.remainingHelp, "749.75 credits remaining.")
+        XCTAssertEqual(QuotaPresentation(snapshot: try quota("")).remainingText, "—")
+        XCTAssertEqual(QuotaPresentation(snapshot: try quota(#""unlimited":true"#)).remainingText, "Unlimited")
+        XCTAssertEqual(QuotaPresentation(snapshot: try quota(#""quota_remaining":0,"entitlement":100"#)).remainingText, "0%")
+        let amountOnly = QuotaPresentation(snapshot: try quota(#""quota_remaining":50"#))
+        XCTAssertEqual(amountOnly.remainingText, "—", "No percentage can be invented without a limit")
+        XCTAssertEqual(amountOnly.remainingHelp, "50 credits remaining.")
+    }
 }

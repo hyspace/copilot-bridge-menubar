@@ -13,9 +13,10 @@ public struct UsageEvent: Codable {
     public var outcome: String
     /// Raw server billing units, separate from token usage and account balances.
     public var nanoAiu: Double? = nil
+    public var tokensComplete: Bool? = nil
 
     private enum CodingKeys: String, CodingKey {
-        case kind, id, timestamp, model, status, input, output, cached, outcome, nanoAiu
+        case kind, id, timestamp, model, status, input, output, cached, outcome, nanoAiu, tokensComplete
     }
 }
 
@@ -34,6 +35,7 @@ extension UsageEvent {
         // Older producers omit billing. A malformed billing extension must not
         // discard otherwise valid token usage.
         nanoAiu = try? values.decodeIfPresent(Double.self, forKey: .nanoAiu)
+        tokensComplete = try? values.decodeIfPresent(Bool.self, forKey: .tokensComplete)
     }
 }
 
@@ -148,7 +150,7 @@ public final class UsageStore {
             sqlite3_bind_int64(s, 3, input ?? 0); sqlite3_bind_int64(s, 4, output ?? 0)
             sqlite3_bind_int64(s, 5, cached ?? 0)
             sqlite3_bind_int(s, 6, event.outcome == "complete" ? 0 : 1)
-            sqlite3_bind_int(s, 7, input == nil || output == nil ? 1 : 0)
+            sqlite3_bind_int(s, 7, input == nil || output == nil || event.tokensComplete == false ? 1 : 0)
             sqlite3_bind_double(s, 8, billing ?? 0)
             sqlite3_bind_int(s, 9, billing == nil ? 0 : 1)
             let result = sqlite3_step(s); sqlite3_finalize(s)

@@ -73,6 +73,25 @@ final class UsageBillingTests: XCTestCase {
         let value = try JSONDecoder().decode(UsageEvent.self, from: Data((base + ",\"nanoAiu\":1250000000}").utf8))
         XCTAssertEqual(value.nanoAiu, 1_250_000_000)
     }
+    func testPartialTokenSnapshotsStayRecordedButDoNotClaimCompleteCoverage() throws {
+        let store = try UsageStore(url: database())
+        var partial = event("partial", billing: 125_000_000)
+        partial.tokensComplete = false
+        try store.record(partial)
+        var complete = event("complete", billing: nil)
+        complete.tokensComplete = true
+        try store.record(complete)
+        try store.record(event("legacy", billing: nil))
+        let totals = try store.totals(today: true)
+        XCTAssertEqual(totals.requests, 3)
+        XCTAssertEqual(totals.input, 300)
+        XCTAssertEqual(totals.output, 60)
+        XCTAssertEqual(totals.unknown, 1)
+        XCTAssertEqual(totals.creditReports, 1)
+        XCTAssertEqual(totals.credits, 0.125)
+        let decoded = try JSONDecoder().decode(UsageEvent.self, from: JSONEncoder().encode(partial))
+        XCTAssertEqual(decoded.tokensComplete, false)
+    }
     func testMigrationMarksHistoricalRequestsUnknownNotFreeAndNeverUsesBalanceAsCost() throws {
         let path = try database()
         var db: OpaquePointer?

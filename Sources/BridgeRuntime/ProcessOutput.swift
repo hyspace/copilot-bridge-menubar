@@ -39,6 +39,17 @@ final class ProcessOutput {
                 if let event = try? JSONDecoder().decode(UsageEvent.self, from: json), event.kind == "usage" {
                     do { try store.record(event) }
                     catch { append("Could not save usage: \(error.localizedDescription)") }
+                    if event.tokensComplete == false {
+                        let reasons = [
+                            "partial": "only partial token counters were reported",
+                            "not_reported": "upstream did not report token counters",
+                            "interrupted": "stream ended before protocol completion",
+                            "size_limit": "response exceeded the bounded usage parser limit",
+                            "invalid_json": "upstream usage could not be parsed"
+                        ]
+                        let reason = reasons[object["tokenStatus"] as? String ?? ""] ?? "token usage is incomplete"
+                        append("Usage: \(reason) (HTTP \(event.status)). Recorded counters are retained; missing usage is not zero.")
+                    }
                     continue
                 }
                 do {

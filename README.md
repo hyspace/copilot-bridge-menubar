@@ -60,11 +60,13 @@ Optional startup behavior is controlled by **Open at login** and
 - An explicit zero is a known zero. Missing billing says **Credits unreported**;
   partial totals show how many requests included billing. Old token history is
   retained, but previously discarded billing fields cannot be recovered.
-- A dashed tile border marks missing token or billing data.
+- A dashed tile border marks missing/partial token or billing data. The detail
+  line reports **token coverage and credit coverage separately**.
 
 **Account balance** remains a separate card, queried from GitHub's quota API.
 It is account-wide, whereas the activity grid covers requests handled by this app.
-The card shows **credits used on the left** and **credits remaining on the right**.
+The card shows **credits used on the left** and **remaining percentage on the right**.
+Hover the percentage for the exact remaining credit amount.
 The bar follows the same order: gray used quota, then green remaining quota.
 Reported usage is preferred; when only a limit and remaining quota are available,
 the calculated used amount is explicitly labeled **derived**. Unknown is not zero.
@@ -88,7 +90,8 @@ The app only reports whether cached credentials exist, not a verified account id
 - Bounded diagnostic logs, automatic crash retries and optional login startup.
 - English interface, messages, help text and reference configuration.
 - Full-area buttons and tabs with hover feedback, including Quit and disclosure headers.
-- A template menu-bar icon that follows the actual menu-bar light/dark appearance.
+- The app icon's original bridge mark in both the panel and menu bar, with
+  template tinting that follows the actual menu-bar light/dark appearance.
 
 All CLI options and intentional restrictions are documented in
 [CLI options](docs/cli-options.md).
