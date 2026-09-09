@@ -201,6 +201,11 @@ struct ActivityHeatmap: View {
                     .fill(color(day.intensity(maximum: peak)))
                     .overlay {
                         RoundedRectangle(cornerRadius: 2)
+                            .fill(Color.primary.opacity(hovered == day.id ? 0.10 : 0))
+                            .allowsHitTesting(false)
+                    }
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 2)
                             .strokeBorder(highlighted?.id == day.id ? Color.primary.opacity(0.6)
                                           : day.hasIncompleteUsage ? Color.secondary.opacity(0.6) : .clear,
                                           style: StrokeStyle(lineWidth: 1, dash: day.hasIncompleteUsage ? [2, 1] : []))

@@ -72,11 +72,11 @@ public struct MenuView: View {
         HStack(spacing: 2) {
             ForEach(Array(["Overview", "Settings", "Logs"].enumerated()), id: \.offset) { index, title in
                 Button { tab = index } label: {
-                    Text(title).font(.system(size: 11, weight: tab == index ? .semibold : .regular))
-                        .frame(maxWidth: .infinity).frame(height: 24)
-                        .background(RoundedRectangle(cornerRadius: 5)
-                            .fill(tab == index ? Color(nsColor: .controlBackgroundColor) : .clear))
-                }.buttonStyle(.plain)
+                    Text(title)
+                }
+                .buttonStyle(PanelTabButtonStyle(selected: tab == index))
+                .accessibilityIdentifier("tab-\(index)")
+                .accessibilityAddTraits(tab == index ? .isSelected : [])
             }
         }.padding(3).background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.045)))
     }
@@ -119,31 +119,15 @@ public struct MenuView: View {
     private var quota: some View {
         VStack(alignment: .leading, spacing: 10) {
             SectionHeading(controller.quota?.title ?? "GitHub credits") {
-                Button("Sign in") { controller.signIn() }
-                    .buttonStyle(.plain).font(.system(size: 10, weight: .medium))
-                    .disabled(controller.isActive)
-                    .help(controller.isActive ? "Stop the service before signing in again" : controller.loginStatus)
                 Button { controller.refreshQuota() } label: {
-                    Image(systemName: "arrow.clockwise").font(.system(size: 10))
-                        .frame(width: 22, height: 20)
-                }.buttonStyle(.plain).foregroundStyle(.secondary)
+                    Label(controller.isFetchingQuota ? "Refreshing…" : "Refresh usage", systemImage: "arrow.clockwise")
+                }.buttonStyle(PanelButtonStyle())
                     .disabled(controller.isFetchingQuota || controller.state != .running)
-                    .help(controller.isFetchingQuota ? "Refreshing" : "Refresh the GitHub account balance")
+                    .help(controller.state != .running ? "Start this app’s service to refresh account usage"
+                          : "Fetch account usage from GitHub. This does not change your authorization.")
             }
             if let value = controller.quota {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(value.unlimited ? "Unlimited" : value.remaining.map { ActivityText.number($0) } ?? "—")
-                        .font(.system(size: 22, weight: .semibold, design: .rounded)).monospacedDigit()
-                    Text("remaining").font(.system(size: 10)).foregroundStyle(.secondary)
-                    Spacer()
-                    if let percent = value.percentRemaining, !value.unlimited {
-                        Text(percent.formatted(.number.locale(ActivityText.locale).precision(.fractionLength(0...1))) + "%")
-                            .font(.system(size: 11, weight: .medium)).monospacedDigit().foregroundStyle(.secondary)
-                    }
-                }
-                if let percent = value.percentRemaining, !value.unlimited {
-                    ProgressView(value: min(max(percent, 0), 100), total: 100).controlSize(.small).tint(.green)
-                }
+                QuotaAmounts(snapshot: value)
                 HStack {
                     Text(value.entitlement.map { "Limit " + ActivityText.number($0) } ?? "Limit unknown")
                     Spacer()
@@ -167,6 +151,22 @@ public struct MenuView: View {
 
     private var preferences: some View {
         VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 8) {
+                SectionHeading("GitHub account") {
+                    Button("Authorize GitHub…") { controller.signIn() }
+                        .buttonStyle(PanelButtonStyle())
+                        .disabled(controller.isActive)
+                        .help("Start a new GitHub device authorization. This is not sign out.")
+                }
+                Text(controller.loginStatus).font(.system(size: 10)).foregroundStyle(.secondary)
+                InlineNote(text: "Authorize again or choose another account on GitHub. Approval replaces the saved CLI credentials; it does not sign out.")
+                if controller.isActive {
+                    InlineNote(text: "Stop this app’s service before changing authorization.")
+                } else {
+                    InlineNote(text: "The app and CLI share credentials. Stop any standalone CLI service before authorizing again.")
+                }
+            }
+            Divider()
             VStack(alignment: .leading, spacing: 8) {
                 SectionHeading("Connection") { EmptyView() }
                 HStack {
@@ -202,7 +202,7 @@ public struct MenuView: View {
                     get: { controller.loginItemEnabled }, set: { controller.setLoginItem($0) }))
             }
             Divider()
-            DisclosureGroup(isExpanded: $advanced) {
+            PanelDisclosure(title: "Advanced", expanded: $advanced) {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Text("Account type").font(.system(size: 11)); Spacer()
@@ -217,8 +217,8 @@ public struct MenuView: View {
                     SettingToggle(title: "Debug logging", value: $controller.settings.debug)
                     InlineNote(text: "Inherited Copilot tokens and upstream overrides are cleared. No shell configuration is loaded and no credentials are printed.")
                 }.padding(.top, 10)
-            } label: { Text("Advanced").font(.system(size: 11, weight: .medium)) }
-            DisclosureGroup(isExpanded: $codexOptions) {
+            }
+            PanelDisclosure(title: "Codex reference configuration", expanded: $codexOptions) {
                 VStack(alignment: .leading, spacing: 3) {
                     SettingToggle(title: "Keep OpenAI sign-in", value: $controller.settings.referenceRequiresOpenAIAuth)
                     SettingToggle(title: "Request reasoning summaries", value: $controller.settings.referenceReasoningSummaries)
@@ -226,7 +226,7 @@ public struct MenuView: View {
                     InlineNote(text: "Reference only. Codex and Claude files are not changed. Choose a model in this app or your client.")
                         .padding(.top, 6)
                 }.padding(.top, 8)
-            } label: { Text("Codex reference configuration").font(.system(size: 11, weight: .medium)) }
+            }
         }
     }
 
@@ -269,7 +269,7 @@ public struct MenuView: View {
             Spacer()
             Button { controller.quit() } label: {
                 Label("Quit", systemImage: "power").font(.system(size: 10))
-            }.buttonStyle(.plain).foregroundStyle(.secondary).help("Quit the app and stop only its service")
+            }.buttonStyle(PanelButtonStyle(destructive: true)).help("Quit the app and stop only its service")
         }.padding(.horizontal, PanelLayout.inset).frame(height: 40)
     }
 
@@ -287,12 +287,12 @@ public struct MenuView: View {
     private func authorization(_ prompt: LoginPrompt) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             SectionHeading("GitHub device authorization") {
-                Button("Cancel") { controller.stop() }.buttonStyle(.plain).font(.system(size: 10)).foregroundStyle(.secondary)
+                Button("Cancel") { controller.stop() }.buttonStyle(PanelButtonStyle())
             }
             HStack {
                 Text(prompt.code).font(.system(size: 22, weight: .semibold, design: .monospaced)).textSelection(.enabled)
                 Spacer()
-                Button { controller.copyDeviceCode() } label: { Image(systemName: "doc.on.doc") }.buttonStyle(PanelButtonStyle())
+                Button { controller.copyDeviceCode() } label: { Label("Copy code", systemImage: "doc.on.doc") }.buttonStyle(PanelButtonStyle())
             }
             Button("Open GitHub sign-in") { controller.openLogin() }.buttonStyle(PanelButtonStyle(accent: true))
             Text("Expires at " + ActivityText.time(prompt.expires))

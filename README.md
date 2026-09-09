@@ -3,7 +3,7 @@
 <img src="docs/screenshots/app-icon.png" width="80" alt="Copilot Bridge app icon">
 
 A native **Apple Silicon macOS menu-bar app** for [Copilot Bridge](https://github.com/hyspace/copilot-bridge).
-Manage your local service, GitHub sign-in, token activity and remaining credits.
+Manage your local service, GitHub authorization, token activity and credit usage.
 No Dock icon, ordinary application window, or separate Bun installation.
 
 <picture>
@@ -64,18 +64,31 @@ Optional startup behavior is controlled by **Open at login** and
 
 **Account balance** remains a separate card, queried from GitHub's quota API.
 It is account-wide, whereas the activity grid covers requests handled by this app.
+The card shows **credits used on the left** and **credits remaining on the right**.
+The bar follows the same order: gray used quota, then green remaining quota.
+Reported usage is preferred; when only a limit and remaining quota are available,
+the calculated used amount is explicitly labeled **derived**. Unknown is not zero.
+**Refresh usage** updates these account figures, not authorization.
 Failed balance refreshes preserve the original observation timestamp. Legacy
 premium-interaction quotas keep their own labels. See [activity data](docs/activity.md).
+
+**Settings > GitHub account > Authorize GitHub…** starts a fresh device
+authorization. Authorize again or select a different account on GitHub; approving
+access replaces the shared CLI credential cache. This is not a sign-out action.
+Stop the app's service and any standalone CLI service before changing authorization.
+The app only reports whether cached credentials exist, not a verified account identity.
 
 ## Settings
 
 - Local-only (`127.0.0.1`) or LAN (`0.0.0.0`) access, with a configurable port.
 - Start, stop and restart only the app's own backend process.
-- GitHub device authorization, using the existing CLI credential cache.
+- Explicit GitHub device authorization, sharing the CLI credential cache.
 - Model override, Auto mode, request interval and rate-limit waiting.
 - Account type, HTTP(S) proxy, proxy exclusions, custom upstream and compatibility version.
 - Bounded diagnostic logs, automatic crash retries and optional login startup.
 - English interface, messages, help text and reference configuration.
+- Full-area buttons and tabs with hover feedback, including Quit and disclosure headers.
+- A template menu-bar icon that follows the actual menu-bar light/dark appearance.
 
 All CLI options and intentional restrictions are documented in
 [CLI options](docs/cli-options.md).

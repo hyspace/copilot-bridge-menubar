@@ -60,6 +60,15 @@ The balance card queries the bridge's `/usage` endpoint for GitHub's account-wid
 remaining quota. Other clients can affect this balance. It is never used as the
 source of a day's request costs, and no balance-difference calculation is made.
 
+The primary amount is **credits used**, on the left; **credits remaining** is
+on the right. The bar has a gray used segment on the left and a green remaining
+segment on the right. It uses the provider's percentage when available, otherwise
+a valid remaining-to-limit ratio. Rounded percentages do not overwrite amounts.
+GitHub's `credits_used` is preferred. For a limited quota without reported usage,
+limit minus remaining is shown as **derived**; absent or inconsistent values stay
+unknown. Unlimited quota does not imply zero consumption and has no percentage bar.
+**Refresh usage** fetches quota only. Device authorization is separate in Settings.
+
 The last successful quota observation is cached with its original timestamp.
 A failed refresh does not make the old balance look newly updated. Legacy quotas
 measured in premium interactions or chat requests retain those units.

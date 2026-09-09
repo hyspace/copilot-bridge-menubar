@@ -24,7 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller = model
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem = item
-        item.button?.image = NSImage(systemSymbolName: "point.3.connected.trianglepath.dotted", accessibilityDescription: "Copilot Bridge")
+        item.button?.image = StatusItemIcon.make()
         item.button?.target = self; item.button?.action = #selector(togglePopover)
         item.button?.toolTip = "Copilot Bridge — Stopped"
         popover.behavior = .transient
@@ -32,7 +32,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover.contentViewController = NSHostingController(rootView: MenuView(controller: model))
         observer = model.$state.sink { [weak self] state in
             self?.statusItem?.button?.toolTip = "Copilot Bridge — \(state.rawValue)"
-            self?.statusItem?.button?.contentTintColor = state == .running ? .systemGreen : nil
         }
     }
     @objc private func togglePopover() {

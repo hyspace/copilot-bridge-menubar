@@ -9,16 +9,87 @@ public enum PanelLayout {
 struct PanelButtonStyle: ButtonStyle {
     var accent = false
     var destructive = false
-    @Environment(\.isEnabled) private var enabled
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 11, weight: .medium))
+        PanelButtonChrome(label: configuration.label, pressed: configuration.isPressed,
+                          accent: accent, destructive: destructive)
+    }
+}
+
+struct PanelTabButtonStyle: ButtonStyle {
+    let selected: Bool
+    func makeBody(configuration: Configuration) -> some View {
+        PanelButtonChrome(label: configuration.label, pressed: configuration.isPressed,
+                          selected: selected)
+    }
+}
+
+enum PanelButtonFeedback {
+    static func opacity(enabled: Bool, pressed: Bool, hovered: Bool) -> Double {
+        !enabled ? 0 : pressed ? 0.18 : hovered ? 0.09 : 0
+    }
+}
+
+/// State belongs to the rendered view, not the short-lived ButtonStyle value.
+/// The content shape is applied after padding/frame so empty space is clickable.
+private struct PanelButtonChrome<Label: View>: View {
+    let label: Label
+    let pressed: Bool
+    var accent = false
+    var destructive = false
+    var selected: Bool? = nil
+    @Environment(\.isEnabled) private var enabled
+    @State private var hovered = false
+
+    private var tint: Color { destructive ? .red : .primary }
+    private var background: Color {
+        if accent && enabled { return .accentColor }
+        if selected == true { return Color(nsColor: .controlBackgroundColor) }
+        return .primary.opacity(selected == nil ? 0.045 : 0)
+    }
+    var body: some View {
+        label
+            .font(.system(size: 11, weight: selected == true ? .semibold : .medium))
             .padding(.horizontal, 10)
-            .frame(height: 28)
+            .frame(maxWidth: selected == nil ? nil : .infinity)
+            .frame(height: selected == nil ? 28 : 24)
             .foregroundStyle(enabled ? (accent ? Color.white : destructive ? Color.red : Color.primary) : Color.secondary)
-            .background(RoundedRectangle(cornerRadius: 6).fill(enabled && accent ? Color.accentColor : Color.primary.opacity(configuration.isPressed ? 0.10 : 0.045)))
-            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.primary.opacity(accent ? 0 : 0.06)))
-            .opacity(configuration.isPressed ? 0.8 : 1)
+            .background(RoundedRectangle(cornerRadius: 6).fill(background))
+            .overlay {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill((accent ? Color.white : tint).opacity(
+                        PanelButtonFeedback.opacity(enabled: enabled, pressed: pressed, hovered: hovered)))
+                    .allowsHitTesting(false)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(tint.opacity(selected != nil || accent ? 0 : 0.06))
+                    .allowsHitTesting(false)
+            }
+            .contentShape(Rectangle())
+            .onHover { hovered = $0 }
+            .animation(.easeOut(duration: 0.12), value: hovered)
+    }
+}
+
+/// Unlike the default disclosure label, the whole header is a button.
+struct PanelDisclosure<Content: View>: View {
+    let title: String
+    @Binding var expanded: Bool
+    @ViewBuilder var content: Content
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button { expanded.toggle() } label: {
+                HStack {
+                    Text(title)
+                    Spacer()
+                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                }.frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(PanelButtonStyle())
+            .accessibilityValue(expanded ? "Expanded" : "Collapsed")
+            if expanded { content }
+        }
     }
 }
 
@@ -41,12 +112,19 @@ struct SettingToggle: View {
     let title: String
     @Binding var value: Bool
     var hint = ""
+    @State private var hovered = false
+    @Environment(\.isEnabled) private var enabled
     var body: some View {
-        HStack(spacing: 12) {
-            Text(title).font(.system(size: 11))
-            Spacer(minLength: 4)
-            Toggle(title, isOn: $value).labelsHidden().toggleStyle(.switch).controlSize(.mini)
-        }.frame(minHeight: 30).help(hint)
+        Toggle(isOn: $value) {
+            Text(title).font(.system(size: 11)).frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .onTapGesture { if enabled { value.toggle() } }
+        }
+        .toggleStyle(.switch).controlSize(.mini)
+        .frame(minHeight: 30).contentShape(Rectangle())
+        .background(RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(hovered && enabled ? 0.045 : 0)))
+        .onHover { hovered = $0 }
+        .help(hint)
     }
 }
 
