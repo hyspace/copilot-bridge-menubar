@@ -47,7 +47,7 @@ port = int(sys.argv[sys.argv.index("--port")+1])
 if port == 4142:
     raise SystemExit("The current real bridge is protected")
 emit({"kind":"usage","id":str(uuid.uuid4()),"timestamp":time.time(),"model":"fake-model",
-      "status":200,"input":100,"output":20,"cached":40,"outcome":"complete"})
+      "status":200,"input":100,"output":20,"cached":40,"nanoAiu":1500000000,"outcome":"complete"})
 
 class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, *_):

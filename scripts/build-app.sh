@@ -33,6 +33,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/arm64-apple-macosx/release/CopilotBridgeMenuBar "$APP/Contents/MacOS/"
 cp build/copilot-bridge-service "$APP/Contents/Resources/"
 cp resources/Info.plist "$APP/Contents/Info.plist"
+cp resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 VERSION="${VERSION:-0.1.0}"
 if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then echo "VERSION must be x.y.z" >&2; exit 1; fi
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist"

@@ -20,7 +20,13 @@ final class BridgeUITests: XCTestCase {
         for (index, day) in ActivityCalendar.grid(ending: now).enumerated() where !day.isFuture {
             if index % 6 != 0 {
                 let input = ((index * 47) % 13 + 1) * 1800
-                let sql = "INSERT INTO totals VALUES('\(day.id)','synthetic',\(input),\(input / 5),\(input / 3),\(index % 10 + 2),0,0)"
+                let requests = index % 10 + 2
+                let reports = index % 13 == 0 ? requests - 1 : requests
+                let charge = (index % 11) * 25_000_000
+                let sql = """
+                INSERT INTO totals(day,model,input,output,cached,requests,errors,unknown,nano_aiu,credit_reports)
+                VALUES('\(day.id)','synthetic',\(input),\(input / 5),\(input / 3),\(requests),0,0,\(charge),\(reports))
+                """
                 XCTAssertEqual(sqlite3_exec(db, sql, nil, nil, nil), SQLITE_OK)
             }
             if index % 9 != 0 {
@@ -79,10 +85,11 @@ final class BridgeUITests: XCTestCase {
         XCTAssertNil(controller.servicePID)
     }
 
-    func testHoverDetailsContainBothTokensAndRealCreditSnapshot() throws {
+    func testHoverDetailsContainTokensAndRequestCostNotAccountBalance() throws {
         let now = Date()
         var usage = UsageTotals()
         usage.input = 1200; usage.output = 300; usage.cached = 400; usage.requests = 2
+        usage.nanoAiu = 1_234_567_891; usage.creditReports = 2
         let snapshot = try QuotaSnapshot.decode(Data("""
         {"token_based_billing":true,"quota_snapshots":{"premium_interactions":{
         "quota_remaining":8125.375,"entitlement":10000,"credits_used":1874.625}}}
@@ -91,15 +98,23 @@ final class BridgeUITests: XCTestCase {
                               quota: QuotaObservation(snapshot: snapshot, observedAt: now))
         let tooltip = ActivityText.tooltip(day)
         XCTAssertTrue(tooltip.contains("1,500 recorded tokens"))
-        XCTAssertTrue(tooltip.contains("8,125.375 credits remaining"))
-        XCTAssertTrue(tooltip.contains("Account-wide balance observed"))
-        XCTAssertTrue(tooltip.contains("Credits used this billing cycle: 1,874.625"))
+        XCTAssertTrue(tooltip.contains("1.234567891 credits used"))
+        XCTAssertTrue(tooltip.contains("Billing reported for 2 of 2 requests"))
+        XCTAssertFalse(tooltip.contains("8,125.375"))
+        XCTAssertFalse(tooltip.contains("1,874.625"))
         day.quota = nil
-        XCTAssertEqual(ActivityText.balance(day), "Credits: not recorded")
-        XCTAssertTrue(ActivityText.tooltip(day).contains("cannot be reconstructed"))
+        XCTAssertEqual(ActivityText.credits(day), "1.234567891 credits used")
+        day.usage.creditReports = 1
+        XCTAssertEqual(ActivityText.credits(day), "1.234567891 reported credits used")
+        XCTAssertTrue(ActivityText.tooltip(day).contains("1 request has no recorded billing"))
+        day.usage.nanoAiu = 0
+        XCTAssertEqual(ActivityText.credits(day), "0 reported credits used")
         usage = UsageTotals(); usage.unknown = 1; usage.requests = 1
         day.usage = usage
         XCTAssertEqual(ActivityText.tokens(day), "Tokens unreported")
+        XCTAssertEqual(ActivityText.credits(day), "Credits unreported")
         XCTAssertTrue(ActivityText.tooltip(day).contains("missing token usage"))
+        XCTAssertEqual(ActivityText.creditNumber(0.0000000005), "0.0000000005")
+        XCTAssertEqual(ActivityText.creditNumber(0.0000000000001), "<0.000000000001")
     }
 }

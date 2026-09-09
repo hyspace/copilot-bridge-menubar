@@ -1,6 +1,30 @@
 import SwiftUI
 import BridgeCore
 
+/// Maps the entire visible grid, including gutters, to the nearest day.
+/// Visual geometry stays unchanged; only pointer hit testing is continuous.
+enum ActivityHitMap {
+    static let side: CGFloat = 10
+    static let gap: CGFloat = 2.5
+    static let monthHeight: CGFloat = 12
+    static var rowOrigin: CGFloat { monthHeight + gap }
+    static var gridHeight: CGFloat { 7 * side + 6 * gap }
+    static func gridWidth(columns: Int) -> CGFloat {
+        columns > 0 ? CGFloat(columns) * side + CGFloat(columns - 1) * gap : 0
+    }
+    static func index(at point: CGPoint, days: [ActivityDay]) -> Int? {
+        let columns = days.count / 7
+        let y = point.y - rowOrigin
+        guard columns > 0, point.x.isFinite, y.isFinite,
+              point.x >= 0, point.x <= gridWidth(columns: columns),
+              y >= 0, y <= gridHeight else { return nil }
+        let column = min(columns - 1, Int((point.x + gap / 2) / (side + gap)))
+        let row = min(6, Int((y + gap / 2) / (side + gap)))
+        let index = column * 7 + row
+        return days[index].isFuture ? nil : index
+    }
+}
+
 enum ActivityText {
     static let locale = Locale(identifier: "en_US")
     static func number(_ value: Double) -> String {
@@ -17,13 +41,19 @@ enum ActivityText {
         let count = day.tokens.formatted(.number.locale(locale).notation(.compactName))
         return "\(count) recorded tokens"
     }
-    static func balance(_ day: ActivityDay) -> String {
-        guard let observation = day.quota else { return "Credits: not recorded" }
-        let value = observation.snapshot
-        let unit = value.kind == .credits ? "credits" : value.kind == .premiumInteractions ? "premium interactions" : "chat requests"
-        if value.unlimited { return "Unlimited \(unit)" }
-        guard let remaining = value.remaining else { return "\(value.title): unknown" }
-        return "\(number(remaining)) \(unit) remaining"
+    static func creditNumber(_ value: Double) -> String {
+        if value > 0 && value < 0.000000000001 { return "<0.000000000001" }
+        return value.formatted(.number.locale(locale).precision(.fractionLength(0...12)))
+    }
+    static func credits(_ day: ActivityDay) -> String {
+        guard let value = day.usage.credits else {
+            return day.usage.requests == 0 ? "No recorded credit usage" : "Credits unreported"
+        }
+        return "\(creditNumber(value)) \(day.hasUnknownCredits ? "reported " : "")credits used"
+    }
+    static func coverage(_ day: ActivityDay) -> String {
+        if day.usage.requests == 0 { return "No requests recorded for this day." }
+        return "Billing reported for \(day.usage.creditReports) of \(day.usage.requests) requests."
     }
     static func tooltip(_ day: ActivityDay) -> String {
         var lines = [
@@ -32,23 +62,20 @@ enum ActivityText {
                 : "\(day.tokens.formatted(.number.locale(locale))) recorded tokens",
             "Reported input: \(day.usage.input) · Output: \(day.usage.output) · Cached: \(day.usage.cached)",
             "\(day.usage.requests) requests · \(day.usage.errors) errors",
-            balance(day)
+            credits(day),
+            coverage(day),
+            "Request billing reported by Copilot; not the account balance."
         ]
         if day.hasUnknownUsage { lines += ["\(day.usage.unknown) requests have missing token usage."] }
-        if let observation = day.quota {
-            lines += ["Account-wide balance observed \(date(observation.observedAt)) at \(time(observation.observedAt))."]
-            if let used = observation.snapshot.creditsUsed {
-                lines += ["Credits used this billing cycle: \(number(used))"]
-            }
-            if observation.snapshot.kind != .credits { lines += ["This quota is not measured in credits."] }
-        } else {
-            lines += ["Historical credits cannot be reconstructed from token counts."]
+        if day.hasUnknownCredits {
+            let subject = day.usage.unknownCredits == 1 ? "1 request has" : "\(day.usage.unknownCredits) requests have"
+            lines += ["\(subject) no recorded billing. Missing charges are not treated as zero."]
         }
         return lines.joined(separator: "\n")
     }
 }
 
-/// A bounded, native calendar grid with token intensity and real quota snapshots.
+/// A bounded, native calendar grid with token intensity and server-reported request charges.
 /// The detail panel responds to hover, click and keyboard focus without opening another window.
 struct ActivityHeatmap: View {
     let days: [ActivityDay]
@@ -61,8 +88,8 @@ struct ActivityHeatmap: View {
         self.days = days
         _selected = State(initialValue: initialSelection)
     }
-    private let side: CGFloat = 10
-    private let gap: CGFloat = 2.5
+    private let side = ActivityHitMap.side
+    private let gap = ActivityHitMap.gap
     private var maximum: Int64 { days.map(\.tokens).max() ?? 0 }
     private var highlighted: ActivityDay? {
         let key = hovered ?? focused ?? selected
@@ -96,7 +123,7 @@ struct ActivityHeatmap: View {
             }
             HStack(alignment: .top, spacing: 0) {
                 VStack(spacing: gap) {
-                    Color.clear.frame(height: 12)
+                    Color.clear.frame(height: ActivityHitMap.monthHeight)
                     ForEach(0..<7) { row in
                         Text(["", "Mon", "", "Wed", "", "Fri", ""][row])
                             .font(.system(size: 8)).foregroundStyle(.secondary)
@@ -106,7 +133,7 @@ struct ActivityHeatmap: View {
                 HStack(alignment: .top, spacing: gap) {
                     ForEach(0..<(days.count / 7), id: \.self) { week in
                         VStack(spacing: gap) {
-                            Color.clear.frame(width: side, height: 12)
+                            Color.clear.frame(width: side, height: ActivityHitMap.monthHeight)
                                 .overlay(alignment: .leading) {
                                     if let month = monthLabels[week] {
                                         Text(month).font(.system(size: 8)).foregroundStyle(.secondary).fixedSize()
@@ -118,6 +145,19 @@ struct ActivityHeatmap: View {
                         }
                     }
                 }
+                .contentShape(Rectangle())
+                .onContinuousHover(coordinateSpace: .local) { phase in
+                    let next: String?
+                    switch phase {
+                    case .active(let point):
+                        next = ActivityHitMap.index(at: point, days: days).map { days[$0].id }
+                    case .ended:
+                        next = nil
+                    }
+                    if hovered != next { hovered = next }
+                }
+                .help(hovered.flatMap { key in days.first { $0.id == key } }
+                    .map(ActivityText.tooltip) ?? "")
             }
             HStack(spacing: 3) {
                 Text("Input + output tokens").font(.system(size: 8))
@@ -137,11 +177,10 @@ struct ActivityHeatmap: View {
                     }.font(.system(size: 10))
                     HStack(spacing: 4) {
                         Image(systemName: "creditcard").font(.system(size: 9))
-                        Text(ActivityText.balance(day)).monospacedDigit()
+                        Text(ActivityText.credits(day)).monospacedDigit()
                         Spacer(minLength: 0)
                     }.font(.system(size: 10)).foregroundStyle(.secondary)
-                    Text(day.quota.map { "Account snapshot at \(ActivityText.time($0.observedAt))" }
-                         ?? "Hover a day for tokens and its recorded credit balance.")
+                    Text(ActivityText.coverage(day))
                         .font(.system(size: 8)).foregroundStyle(.tertiary)
                 }
                 .frame(maxWidth: .infinity, minHeight: 48, alignment: .topLeading)
@@ -163,19 +202,14 @@ struct ActivityHeatmap: View {
                     .overlay {
                         RoundedRectangle(cornerRadius: 2)
                             .strokeBorder(highlighted?.id == day.id ? Color.primary.opacity(0.6)
-                                          : day.hasUnknownUsage ? Color.secondary.opacity(0.6) : .clear,
-                                          style: StrokeStyle(lineWidth: 1, dash: day.hasUnknownUsage ? [2, 1] : []))
+                                          : day.hasIncompleteUsage ? Color.secondary.opacity(0.6) : .clear,
+                                          style: StrokeStyle(lineWidth: 1, dash: day.hasIncompleteUsage ? [2, 1] : []))
                     }
                     .frame(width: side, height: side)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .focused($focused, equals: day.id)
-            .onHover { inside in
-                if inside { hovered = day.id }
-                else if hovered == day.id { hovered = nil }
-            }
-            .help(ActivityText.tooltip(day))
             .accessibilityLabel(ActivityText.tooltip(day))
             .accessibilityIdentifier("activity-day-\(day.id)")
         }

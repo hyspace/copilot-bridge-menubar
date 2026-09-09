@@ -80,6 +80,7 @@ final class BridgeRuntimeTests: XCTestCase {
         try await eventually("fake backend never became healthy") { controller.state == .running }
         try await eventually("quota or token event was not delivered") {
             controller.quota?.remaining == 75.5 && controller.today.input == 100
+                && controller.today.credits == 1.5 && controller.today.creditReports == 1
         }
         let args = try JSONSerialization.jsonObject(with: Data(contentsOf: home.appendingPathComponent("argv.json"))) as! [String]
         XCTAssertTrue(args.contains("--no-codex-setup"))

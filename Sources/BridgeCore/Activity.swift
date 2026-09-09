@@ -21,6 +21,8 @@ public struct ActivityDay: Identifiable, Equatable {
     }
     public var tokens: Int64 { usage.input + usage.output } // Cached tokens are already in input.
     public var hasUnknownUsage: Bool { usage.unknown > 0 }
+    public var hasUnknownCredits: Bool { usage.unknownCredits > 0 }
+    public var hasIncompleteUsage: Bool { hasUnknownUsage || hasUnknownCredits }
     public func intensity(maximum: Int64) -> Int {
         guard tokens > 0, maximum > 0 else { return 0 }
         return min(4, max(1, Int(ceil(Double(tokens) / Double(maximum) * 4))))

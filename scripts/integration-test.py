@@ -51,9 +51,14 @@ class Mock(http.server.BaseHTTPRequestHandler):
             {"type":"response.created","response":{"id":"response-test","model":"gpt-6-astra","created_at":1,"output":[]}},
             {"type":"response.output_text.delta","output_index":0,"item_id":"item-test","delta":"你好"},
             {"type":"response.completed","response":{"id":"response-test","output":[],
-                "usage":{"input_tokens":100,"output_tokens":20,"input_tokens_details":{"cached_tokens":40}}}}
+                "usage":{"input_tokens":100,"output_tokens":20,"input_tokens_details":{"cached_tokens":40},
+                         "copilot_usage":{"total_nano_aiu":125000000}}}}
         ]
         if body.get("input") == "test-interrupt": events = events[:-1]
+        if body.get("input") == "test-billing-only":
+            events[-1]["response"]["usage"] = {"copilot_usage":{"total_nano_aiu":500000000}}
+        if body.get("input") == "test-free":
+            events[-1]["response"]["usage"]["copilot_usage"]["total_nano_aiu"] = 0
         self.send("".join(f"data: {json.dumps(e)}\n\n" for e in events),
                   content_type="text/event-stream")
 
@@ -110,7 +115,7 @@ with tempfile.TemporaryDirectory(prefix="cbm-integration-") as directory:
             assert fetch(p, "/v1/responses")[0] == 404  # HTTP GET is not WebSocket.
             status, data = fetch(p, "/v1/models?client_version=0.153.3")
             assert status == 200 and json.loads(data)["models"][0]["slug"] == "gpt-6-astra"
-            for text in ["hello", "test-413", "test-interrupt"] + ["load-test"] * 100:
+            for text in ["hello", "test-413", "test-interrupt", "test-billing-only", "test-free"] + ["load-test"] * 100:
                 status, data = fetch(p, "/v1/responses",
                     body={"model":"gpt-6-astra","input":text,"stream":True})
                 assert status == (413 if text == "test-413" else 200)
@@ -130,8 +135,12 @@ with tempfile.TemporaryDirectory(prefix="cbm-integration-") as directory:
             except subprocess.TimeoutExpired: child.kill(); child.wait(timeout=5)
     records = [json.loads(line[6:]) for line in stdout.read_text().splitlines() if line.startswith("@@CBM:")]
     usage = [record for record in records if record.get("kind") == "usage"]
-    assert len(usage) == 103, len(usage)
-    assert sum(record["input"] or 0 for record in usage) == 10100
+    assert len(usage) == 105, len(usage)
+    assert sum(record["input"] or 0 for record in usage) == 10200
+    assert sum(record["nanoAiu"] or 0 for record in usage) == 13125000000
+    assert len([r for r in usage if r["nanoAiu"] is not None]) == 103
+    assert len([r for r in usage if r["nanoAiu"] == 0]) == 1
+    assert any(r["input"] is None and r["nanoAiu"] == 500000000 for r in usage)
     assert len([r for r in usage if r["outcome"] == "http_error"]) == 1
     assert len([r for r in usage if r["outcome"] == "interrupted"]) == 1
     assert "FAKE_OPENAI_DO_NOT_FORWARD" not in stdout.read_text()
@@ -163,6 +172,6 @@ time.sleep(30)
 mock.shutdown(); mock.server_close()
 current = subprocess.run(["lsof","-tiTCP:4142","-sTCP:LISTEN"],capture_output=True,text=True).stdout.strip()
 assert ORIGINAL_PID == current, "Protected listener identity changed"
-print("PASS: compiled arm64 backend, 103 keyless fake requests, usage/413/interruption,")
+print("PASS: compiled arm64 backend, 105 keyless fake requests, token/billing/413/interruption,")
 print("      catalog compatibility, no config writes, port conflict, parent-death cleanup.")
 print(f"Protected 4142 listener unchanged: {current or '(none)'}")

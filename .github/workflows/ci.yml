@@ -33,6 +33,7 @@ jobs:
           (cd vendor/copilot-bridge && bun test)
           python3 scripts/test-cask.py
           python3 scripts/test-english.py
+          python3 scripts/test-icon.py
           swift test --disable-sandbox
       - name: Backend and isolated integration tests
         run: |

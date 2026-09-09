@@ -34,6 +34,7 @@ jobs:
           (cd vendor/copilot-bridge && bun test)
           python3 scripts/test-cask.py
           python3 scripts/test-english.py
+          python3 scripts/test-icon.py
           swift test --disable-sandbox
           python3 scripts/build-backend.py
           python3 scripts/test-auth.py

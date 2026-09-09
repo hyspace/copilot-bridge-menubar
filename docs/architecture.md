@@ -5,7 +5,7 @@ NSStatusItem + transient NSPopover (SwiftUI, LSUIElement)
   └─ BridgeController (MainActor)
        ├─ owned Process, no shell, bundled arm64 executable
        ├─ bounded nonblocking pipe readers → sanitised rotating logs
-       ├─ usage JSONL → daily/model SQLite aggregates
+       ├─ usage JSONL → daily/model token and billing aggregates
        ├─ loopback health check with per-launch instance identifier
        └─ loopback /usage → daily account-balance snapshots + quota UI
 
@@ -56,9 +56,10 @@ from a live listener; actual occupied ports remain protected.
 - Rotating logs (about 2 MiB active plus three historical files).
 - SQLite WAL with checkpoints; UTC event timestamps aggregate by local date.
   Hourly maintenance retains two days of dedup IDs and 730 days of daily totals.
-- A 26-week native activity grid joins token totals with the last successful quota
-  observation per day. Credit balances are account-wide snapshots, not costs
-  inferred from token counts; see `activity.md`.
+- A 26-week native activity grid displays token totals and server-reported request
+  credits. Remaining account quota is a separate card; see `activity.md`.
+- Retry-response observation is capped at one second and 4 MiB. Repeated stream
+  snapshots replace counters rather than being counted as additional charges.
 - SSE observation uses a 256 KiB event cap; JSON observation uses a 4 MiB cap.
   Oversized bodies are still forwarded unchanged but usage may be unavailable.
 - No response clone/tee branch for model streaming. Downstream cancellation
@@ -94,7 +95,7 @@ The parent creates a fresh private event-channel token per launch. Only matching
 JSONL records can change auth/accounting state; untrusted error text cannot spoof
 a supervisor event merely by using the same line prefix.
 
-Telemetry records a request UUID, timestamp, model identifier, numeric usage,
+Telemetry records a request UUID, timestamp, model identifier, numeric token usage and raw nano-AIU billing,
 HTTP status and completion category. It never stores a prompt or model output.
 Missing usage is not treated as measured zero. Counts include actual retries and
 bridge-internal model calls, not just user turns.

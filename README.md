@@ -1,5 +1,7 @@
 # Copilot Bridge Menu Bar
 
+<img src="docs/screenshots/app-icon.png" width="80" alt="Copilot Bridge app icon">
+
 A native **Apple Silicon macOS menu-bar app** for [Copilot Bridge](https://github.com/hyspace/copilot-bridge).
 Manage your local service, GitHub sign-in, token activity and remaining credits.
 No Dock icon, ordinary application window, or separate Bun installation.
@@ -46,24 +48,24 @@ Optional startup behavior is controlled by **Open at login** and
 ## Activity and credits
 
 - The contribution-style grid shows **26 weeks** of recorded token activity,
-  grouped by local calendar date.
-- Darker green means more reported **input + output tokens** relative to the
-  busiest visible day. Cached tokens are already part of input and are not added twice.
-- Hover, click, or keyboard-focus a day to see its recorded tokens and its
-  last-observed **account-wide credit balance**. The tooltip also includes
-  input/output/cache counts, requests, errors and the snapshot time.
-- Credit figures come from GitHub's quota API. They are **not estimated from tokens**.
-  A historical balance is a snapshot, not a daily cost or a live balance.
-- Days without saved quota data say **Credits: not recorded**. Existing token
-  history is preserved, but credit history cannot be reconstructed retroactively.
-- Missing token usage is reported explicitly; a dashed tile border marks days
-  containing requests with incomplete usage data.
-- Legacy premium-interaction quotas keep their own labels; they are not shown as credits.
+  grouped by the local date of each upstream request attempt.
+- Darker green means more reported **input + output tokens**. Cached tokens are
+  already part of input and are not added twice.
+- Hover, click or keyboard-focus a day to see its token totals and **credits used**.
+  Hover coverage includes the gaps between tiles without changing their appearance.
+- Request charges come directly from `usage.copilot_usage.total_nano_aiu`, divided
+  by 1,000,000,000. They are **not estimated from token counts or balance changes**.
+- Repeated stream snapshots are not added twice. Each real retry is recorded
+  separately, and duplicate event IDs are ignored.
+- An explicit zero is a known zero. Missing billing says **Credits unreported**;
+  partial totals show how many requests included billing. Old token history is
+  retained, but previously discarded billing fields cannot be recovered.
+- A dashed tile border marks missing token or billing data.
 
-Token totals cover only requests handled by this app. Credit balances are
-account-wide and can include usage by other clients. The current balance is
-refreshed while the owned service is running; failed queries do not make an old
-balance appear freshly updated. See [activity data](docs/activity.md) for details.
+**Account balance** remains a separate card, queried from GitHub's quota API.
+It is account-wide, whereas the activity grid covers requests handled by this app.
+Failed balance refreshes preserve the original observation timestamp. Legacy
+premium-interaction quotas keep their own labels. See [activity data](docs/activity.md).
 
 ## Settings
 
@@ -113,7 +115,7 @@ replace the explicit model placeholder with a model available to your account.
 **LAN mode has no incoming API key and uses unencrypted HTTP. Use trusted
 networks only. Do not expose it to the internet or configure port forwarding.**
 
-Settings, daily/model usage totals, and daily quota snapshots are stored locally.
+Settings, daily/model token and billing totals, and quota snapshots are stored locally.
 No prompt or response database is created. Aggregates are retained for 730 days,
 deduplication IDs for two days, and logs for up to four files of approximately
 2 MB each. Only the latest 200 log lines are held in the interface.
@@ -121,7 +123,7 @@ deduplication IDs for two days, and logs for up to four files of approximately
 ```text
 ~/Library/Application Support/CopilotBridgeMenuBar/
   settings.json       # App settings; no account credentials
-  usage.sqlite        # Token aggregates and last daily quota observations
+  usage.sqlite        # Request tokens, billing totals and quota observations
   Logs/bridge*.log    # Rotating diagnostics
 ~/.local/share/copilot-bridge/github_token  # CLI-managed credentials, mode 0600
 ```
@@ -141,11 +143,17 @@ bun test backend
 swift test --disable-sandbox
 python3 scripts/test-cask.py
 python3 scripts/test-english.py
+python3 scripts/test-icon.py
 python3 scripts/build-backend.py
 python3 scripts/test-auth.py
 python3 scripts/integration-test.py
 bash scripts/build-app.sh
 ```
+
+The original app icon is generated from vector geometry in
+`scripts/generate-icon.swift`; the bundled `AppIcon.icns` includes standard and
+Retina sizes. To regenerate it, run `swift scripts/generate-icon.swift build/icon`
+and copy the resulting icon into `resources/AppIcon.icns`.
 
 Build requirements: Apple Silicon Mac, Swift 6+, Python 3, and Bun 1.4.1.
 The native targets have no remote package dependencies. The CLI is pinned by Git
