@@ -2,10 +2,10 @@
 class CopilotBridgeMenubar < Formula
   desc "Native Apple Silicon menu-bar supervisor for Copilot Bridge"
   homepage "https://github.com/hyspace/copilot-bridge-menubar"
-  url "https://github.com/hyspace/copilot-bridge-menubar/releases/download/v0.1.0/Copilot-Bridge-arm64.zip"
-  version "0.1.0"
-  revision 1
-  sha256 "8b04ee69533bebe18259f85e6b2e3d09b576c386fc0e54163fb604def19a19e8"
+  url "https://github.com/hyspace/copilot-bridge-menubar/releases/download/v0.1.1/Copilot-Bridge-arm64.zip"
+  version "0.1.1"
+
+  sha256 "507b2c7015ca3872263f7f2735cd3901def11267fdc095ef556fae2278dec39d"
   license "MIT"
 
   depends_on arch: :arm64
