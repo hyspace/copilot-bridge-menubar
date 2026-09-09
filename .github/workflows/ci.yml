@@ -38,6 +38,7 @@ jobs:
       - name: Backend and isolated integration tests
         run: |
           python3 scripts/build-backend.py
+          CBM_CONFIG_TEST_BINARY="$PWD/build/copilot-bridge-service" swift test --disable-sandbox --filter CodexConfigTests
           python3 scripts/test-auth.py
           python3 scripts/integration-test.py
           (cd vendor/copilot-bridge && bun run test:http)
@@ -46,6 +47,7 @@ jobs:
           bash scripts/build-app.sh
           python3 scripts/verify-app.py --app "build/Copilot Bridge.app" --version 0.1.0
           CBM_TEST_BINARY="$PWD/build/Copilot Bridge.app/Contents/Resources/copilot-bridge-service" python3 scripts/integration-test.py
+          CBM_CONFIG_TEST_BINARY="$PWD/build/Copilot Bridge.app/Contents/Resources/copilot-bridge-service" swift test --disable-sandbox --filter CodexConfigTests
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: Copilot-Bridge-arm64

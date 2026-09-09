@@ -69,7 +69,10 @@ final class BridgeRuntimeTests: XCTestCase {
         let data = home.appendingPathComponent("data")
         let controller = BridgeController(root: data, backend: executable, home: home,
             heartbeat: 0.02, shutdownGrace: 0.15, retryScale: retryScale,
-            healthInterval: 0.05, startupTimeout: startupTimeout)
+            healthInterval: 0.05, startupTimeout: startupTimeout,
+            configPlanner: { _ in
+                try JSONDecoder().decode(CodexPlanResult.self, from: Data(#"{"ok":true,"mode":"off","reserved":false,"profileOverride":false}"#.utf8))
+            })
         // Reserve then release an ephemeral port; never read real config or use 4142.
         do { let lease = try PortLease(); controller.settings.port = lease.port }
         controller.settings.automaticRestart = false

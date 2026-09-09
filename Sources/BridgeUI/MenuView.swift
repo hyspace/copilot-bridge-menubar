@@ -6,7 +6,6 @@ public struct MenuView: View {
     @ObservedObject var controller: BridgeController
     @State private var tab = 0
     @State private var advanced = false
-    @State private var codexOptions = false
 
     public init(controller: BridgeController, initialTab: Int = 0) {
         self.controller = controller
@@ -51,7 +50,7 @@ public struct MenuView: View {
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text("Copilot Bridge").font(.system(size: 13, weight: .semibold))
-                Text("Local model service").font(.system(size: 10)).foregroundStyle(.secondary)
+                Text("GitHub Copilot for Codex App").font(.system(size: 10)).foregroundStyle(.secondary)
             }
             Spacer()
             HStack(spacing: 5) {
@@ -106,8 +105,16 @@ public struct MenuView: View {
                             .buttonStyle(PanelButtonStyle()).help("Restart only this app’s service")
                             .disabled(controller.state == .stopping)
                     }
-                    Button { controller.copyReference() } label: { Label("Codex config", systemImage: "doc.on.doc") }
-                        .buttonStyle(PanelButtonStyle()).help("Copy a reference configuration without changing files")
+                    if controller.codexSwitch.known && controller.codexSwitch.canChange
+                        && (!controller.codexSwitch.enabled || controller.codexSwitch.managed) {
+                        SettingToggle(title: "Use in Codex", value: Binding(
+                            get: { controller.codexToggleValue }, set: { controller.setCodexEnabled($0) }),
+                            hint: "Use Copilot Bridge in Codex App. Restart Codex App after switching.")
+                            .frame(width: 145).disabled(controller.isUpdatingCodex)
+                    } else {
+                        Button { tab = 1 } label: { Label("Codex routing", systemImage: "slider.horizontal.3") }
+                            .buttonStyle(PanelButtonStyle()).help("Review Codex App routing and configuration backups")
+                    }
                 }
                 if controller.hasUnsavedChanges { InlineNote(text: "Settings changed. Save and restart to apply.", warning: true) }
             }
@@ -115,6 +122,29 @@ public struct MenuView: View {
             quota
             Divider()
             ActivityHeatmap(days: controller.activity)
+        }
+    }
+
+    private var codexRouting: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if controller.codexSwitch.known {
+                SettingToggle(title: "Use Copilot Bridge in Codex", value: Binding(
+                    get: { controller.codexToggleValue }, set: { controller.setCodexEnabled($0) }),
+                    hint: controller.codexConfigPath)
+                    .disabled(controller.isUpdatingCodex || !controller.codexSwitch.canChange)
+            } else {
+                HStack {
+                    Text(controller.isUpdatingCodex ? "Checking Codex routing…" : "Codex routing needs attention")
+                        .font(.system(size: 11))
+                    Spacer()
+                    Button("Recheck") { controller.refreshCodexConfiguration() }
+                        .buttonStyle(PanelButtonStyle()).disabled(controller.isUpdatingCodex)
+                }.frame(minHeight: 30)
+            }
+            Text(controller.codexSwitch.message).font(.system(size: 9)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Restart Codex App after switching. OpenAI sign-in stays enabled.")
+                .font(.system(size: 9)).foregroundStyle(.secondary)
         }
     }
 
@@ -154,6 +184,16 @@ public struct MenuView: View {
     private var preferences: some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 8) {
+                SectionHeading("Codex App") {
+                    Button("Open backups") { controller.openCodexBackups() }.buttonStyle(PanelButtonStyle())
+                }
+                codexRouting
+                Text(controller.codexConfigPath).font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(.secondary).textSelection(.enabled)
+                InlineNote(text: "Routing persists when Bridge quits. Only Codex App is supported. Explicit launch or profile overrides may take precedence.")
+            }
+            Divider()
+            VStack(alignment: .leading, spacing: 8) {
                 SectionHeading("GitHub account") {
                     Button("Authorize GitHub…") { controller.signIn() }
                         .buttonStyle(PanelButtonStyle())
@@ -161,11 +201,11 @@ public struct MenuView: View {
                         .help("Start a new GitHub device authorization. This is not sign out.")
                 }
                 Text(controller.loginStatus).font(.system(size: 10)).foregroundStyle(.secondary)
-                InlineNote(text: "Authorize again or choose another account on GitHub. Approval replaces the saved CLI credentials; it does not sign out.")
+                InlineNote(text: "Authorize again or choose another account on GitHub. Approval replaces saved Bridge credentials; it does not sign out.")
                 if controller.isActive {
                     InlineNote(text: "Stop this app’s service before changing authorization.")
                 } else {
-                    InlineNote(text: "The app and CLI share credentials. Stop any standalone CLI service before authorizing again.")
+                    InlineNote(text: "Stop any other Bridge service before changing the shared GitHub authorization.")
                 }
             }
             Divider()
@@ -180,12 +220,14 @@ public struct MenuView: View {
                     }.labelsHidden().pickerStyle(.segmented).controlSize(.small).frame(width: 154)
                 }.frame(height: 28)
                 numericRow("Port", value: $controller.settings.port)
+                    .disabled(controller.codexSwitch.enabled || controller.isUpdatingCodex)
+                    .help("Switch Codex routing off before changing the port, then turn it on again.")
                 if controller.settings.scope == .lan { InlineNote(text: "LAN access has no key. Use trusted networks only; never expose it to the internet.", warning: true) }
             }
             Divider()
             VStack(alignment: .leading, spacing: 8) {
                 SectionHeading("Model & requests") { EmptyView() }
-                TextSetting(title: "Model override", placeholder: "Leave blank to use the client’s model", value: $controller.settings.model)
+                TextSetting(title: "Bridge model override", placeholder: "Use Codex App’s selected model", value: $controller.settings.model)
                 SettingToggle(title: "Auto mode", value: $controller.settings.autoMode,
                               hint: "Only models available in Copilot Auto sessions are supported")
                 numericRow("Request interval", value: $controller.settings.rateLimitSeconds, suffix: "s")
@@ -219,15 +261,6 @@ public struct MenuView: View {
                     SettingToggle(title: "Debug logging", value: $controller.settings.debug)
                     InlineNote(text: "Inherited Copilot tokens and upstream overrides are cleared. No shell configuration is loaded and no credentials are printed.")
                 }.padding(.top, 10)
-            }
-            PanelDisclosure(title: "Codex reference configuration", expanded: $codexOptions) {
-                VStack(alignment: .leading, spacing: 3) {
-                    SettingToggle(title: "Keep OpenAI sign-in", value: $controller.settings.referenceRequiresOpenAIAuth)
-                    SettingToggle(title: "Request reasoning summaries", value: $controller.settings.referenceReasoningSummaries)
-                    Button("Copy reference configuration") { controller.copyReference() }.buttonStyle(PanelButtonStyle())
-                    InlineNote(text: "Reference only. Codex and Claude files are not changed. Choose a model in this app or your client.")
-                        .padding(.top, 6)
-                }.padding(.top, 8)
             }
         }
     }
@@ -264,14 +297,17 @@ public struct MenuView: View {
                         .buttonStyle(PanelButtonStyle()).disabled(controller.state == .stopping)
                 }
             } else {
-                Text(Bundle.main.bundleIdentifier == "com.hyspace.copilot-bridge-menubar"
-                     ? "v" + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev") : "Development preview")
-                    .font(.system(size: 9)).foregroundStyle(.tertiary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(Bundle.main.bundleIdentifier == "com.hyspace.copilot-bridge-menubar"
+                         ? "v" + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev") : "Development preview")
+                        .foregroundStyle(.tertiary)
+                    Text("Restart Codex App after switching").foregroundStyle(.secondary)
+                }.font(.system(size: 9))
             }
             Spacer()
             Button { controller.quit() } label: {
                 Label("Quit", systemImage: "power").font(.system(size: 10))
-            }.buttonStyle(PanelButtonStyle(destructive: true)).help("Quit the app and stop only its service")
+            }.buttonStyle(PanelButtonStyle(destructive: true)).help("Quit Bridge and stop only its service. Saved Codex routing is not changed.")
         }.padding(.horizontal, PanelLayout.inset).frame(height: 40)
     }
 

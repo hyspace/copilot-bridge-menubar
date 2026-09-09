@@ -44,7 +44,7 @@ cask "copilot-bridge-menubar" do
 
   url "https://github.com/{args.repository}/releases/download/v#{{version}}/Copilot-Bridge-arm64.zip"
   name "Copilot Bridge"
-  desc "Native Apple Silicon menu-bar supervisor for Copilot Bridge"
+  desc "GitHub Copilot bridge and configuration switch for Codex App"
   homepage "https://github.com/{args.repository}"
 
   depends_on arch: :arm64

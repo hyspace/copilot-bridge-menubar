@@ -42,19 +42,16 @@ final class BridgeCoreTests: XCTestCase {
         XCTAssertThrowsError(try settings.validated())
         settings.upstreamURL = "https://api.githubcopilot.com"; XCTAssertNoThrow(try settings.validated())
     }
-    func testReferenceKeepsOpenAIAuthAndUsesRecognizedWebsocketSetting() {
-        var settings = BridgeSettings(); settings.model = "gpt-6-astra"
-        let text = settings.referenceConfig()
-        XCTAssertTrue(text.contains("requires_openai_auth = true"))
-        XCTAssertTrue(text.contains("supports_websockets = false"))
-        XCTAssertFalse(text.contains("prefer_websockets"))
-        XCTAssertFalse(text.contains("X-Bridge-Key"))
-        settings.scope = .lan
-        XCTAssertFalse(settings.referenceConfig(hostName: "mac.local").contains("X-Bridge-Key"))
-        XCTAssertTrue(settings.referenceConfig(hostName: "mac.local").contains("http://mac.local:4142/v1"))
+    func testLANRemainsKeylessAndLegacyReferenceSettingsAreIgnored() throws {
+        let settings = BridgeSettings()
         let environment = settings.environment(inheriting: ["COPILOT_BRIDGE_ACCESS_KEY":"old"],
             home:"/tmp/test",parentPID:123,instance:"one")
         XCTAssertNil(environment["COPILOT_BRIDGE_ACCESS_KEY"])
+        var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)) as? [String: Any])
+        legacy["referenceRequiresOpenAIAuth"] = true
+        legacy["referenceReasoningSummaries"] = true
+        let decoded = try JSONDecoder().decode(BridgeSettings.self, from: JSONSerialization.data(withJSONObject: legacy))
+        XCTAssertEqual(decoded, settings)
     }
     func testSettingsPersistAtomicallyWithPrivatePermissions() throws {
         let root = try temporaryDirectory()

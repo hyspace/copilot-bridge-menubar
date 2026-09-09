@@ -43,6 +43,7 @@ jobs:
           bash scripts/build-app.sh
           python3 scripts/verify-app.py --app "build/Copilot Bridge.app" --version "$VERSION"
           CBM_TEST_BINARY="$PWD/build/Copilot Bridge.app/Contents/Resources/copilot-bridge-service" python3 scripts/integration-test.py
+          CBM_CONFIG_TEST_BINARY="$PWD/build/Copilot Bridge.app/Contents/Resources/copilot-bridge-service" swift test --disable-sandbox --filter CodexConfigTests
       - name: Publish immutable release assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -50,7 +51,7 @@ jobs:
         run: |
           gh release create "$TAG" build/Copilot-Bridge-arm64.zip build/SHA256SUMS \
             --verify-tag --title "Copilot Bridge $TAG" --generate-notes \
-            --notes "Apple Silicon, macOS 14+. Install with Homebrew or download the app below. Ad-hoc signed; no Apple notarization is claimed. Existing CLI processes and Codex configuration are never replaced."
+            --notes "Apple Silicon, macOS 14+. Built for Codex App only. Install with Homebrew or download the app below. Ad-hoc signed; no Apple notarization is claimed. Existing Bridge processes are never taken over. Codex configuration changes require the explicit routing switch and a restart of Codex App."
       - name: Update Homebrew package with the actual release checksum
         env:
           GH_TOKEN: ${{ github.token }}

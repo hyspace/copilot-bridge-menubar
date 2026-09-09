@@ -2,8 +2,10 @@
 
 <img src="docs/screenshots/app-icon.png" width="80" alt="Copilot Bridge app icon">
 
-A native **Apple Silicon macOS menu-bar app** for [Copilot Bridge](https://github.com/hyspace/copilot-bridge).
-Manage your local service, GitHub authorization, token activity and credit usage.
+A native **Apple Silicon macOS menu-bar app** connecting **Codex App** to
+**GitHub Copilot**, powered by [Copilot Bridge](https://github.com/hyspace/copilot-bridge).
+Codex App is the only supported client. Manage its routing switch, the local
+Bridge service, GitHub authorization, token activity and credit usage.
 No Dock icon, ordinary application window, or separate Bun installation.
 
 <picture>
@@ -22,7 +24,8 @@ brew install --cask hyspace/copilot-bridge-menubar/copilot-bridge-menubar
 
 Open **Copilot Bridge** from Applications. The app is installed at
 `/Applications/Copilot Bridge.app`. Click its menu-bar icon, review Settings, then
-choose **Start service**. The backend does not start automatically on first launch.
+choose **Start service**, enable **Use in Codex**, then
+**restart Codex App**. The backend does not start automatically on first launch.
 If another service already uses port 4142, choose a different port.
 The app never takes over or terminates an existing CLI process.
 
@@ -88,13 +91,15 @@ The app only reports whether cached credentials exist, not a verified account id
 - Model override, Auto mode, request interval and rate-limit waiting.
 - Account type, HTTP(S) proxy, proxy exclusions, custom upstream and compatibility version.
 - Bounded diagnostic logs, automatic crash retries and optional login startup.
-- English interface, messages, help text and reference configuration.
+- A transactional Codex App routing switch with verified backups and safe restore.
+- English interface, messages and help text.
 - Full-area buttons and tabs with hover feedback, including Quit and disclosure headers.
 - The app icon's original bridge mark in both the panel and menu bar, with
   template tinting that follows the actual menu-bar light/dark appearance.
 
-All CLI options and intentional restrictions are documented in
-[CLI options](docs/cli-options.md).
+Internal service options and intentional restrictions are documented in
+[Service options](docs/service-options.md). These are implementation details,
+not support for other coding clients.
 
 The default service behavior is equivalent to:
 
@@ -108,23 +113,34 @@ The app uses its bundled standalone backend, not a user shell. Inherited
 `COPILOT_TOKEN` and `COPILOT_BASE_URL` are cleared so the CLI can obtain and refresh
 its own credentials. A custom upstream is set only when explicitly configured.
 
-## Codex configuration
+## Codex App configuration
 
-Choose **Codex config** to copy a reference. Merge it into your existing
-`~/.codex/config.toml`; do not replace the entire file. The app never writes
-Codex or Claude configuration.
+Use **Use in Codex** in Overview, or **Use Copilot Bridge in Codex** in Settings. No configuration
+copying or manual merging is required. **Restart Codex App after each switch**;
+running tasks are not restarted or switched by this app.
 
-```toml
-[model_providers.bridge]
-name = "Copilot Bridge"
-base_url = "http://127.0.0.1:4142/v1"
-wire_api = "responses"
-supports_websockets = false
-requires_openai_auth = true
-```
+- **On:** save a private, verified full backup, select an app-owned provider and
+  point it to this Mac's Bridge service. OpenAI sign-in stays enabled.
+- **Off:** restore the previous provider and remove only the app-owned block.
+  Unrelated edits made while enabled, including model selection and project
+  settings, are preserved. Changes to managed fields cause a conflict instead
+  of being overwritten.
+- **Existing manual Bridge configuration:** no pre-Bridge restore point can be
+  assumed. The UI explicitly explains that turning off makes a full backup and
+  selects Codex's default provider. Existing user-owned provider tables are kept.
+  Overview's **Codex routing** button opens that explanation in Settings first.
+- **Open backups** in Settings provides access to the retained restore points.
 
-The reference preserves OpenAI sign-in by default. If Model override is blank,
-replace the explicit model placeholder with a model available to your account.
+The switch edits `~/.codex/config.toml`, or the home selected by an absolute
+`CODEX_HOME` when Bridge starts. It never reads or writes `auth.json`.
+Model choice and reasoning preferences are not rewritten. To change the service
+port, switch routing off, change/save the port, then switch routing on again.
+The toggle always uses loopback, even when the server allows LAN access.
+
+Routing persists when Bridge quits; it is never silently restored on quit,
+launch or upgrade. Other Codex clients sharing this home can also read the same
+user config, although only Codex App is supported. See
+[Configuration switching and recovery](docs/configuration.md).
 
 ## Safety and local data
 
@@ -141,10 +157,13 @@ deduplication IDs for two days, and logs for up to four files of approximately
   settings.json       # App settings; no account credentials
   usage.sqlite        # Request tokens, billing totals and quota observations
   Logs/bridge*.log    # Rotating diagnostics
+  CodexConfig/        # Private full-config backups and transaction recovery state
 ~/.local/share/copilot-bridge/github_token  # CLI-managed credentials, mode 0600
 ```
 
-Credentials are redacted, but review debug logs before sharing them: upstream
+Configuration backups may contain credentials from existing settings. **Do not
+upload backups or attach them to public issues.** Credentials are redacted in
+service logs, but review debug logs before sharing them: upstream
 errors may contain application-specific information. GitHub's internal quota
 interface may change; missing values are shown as unknown, never invented.
 Credit units are not converted into dollars.

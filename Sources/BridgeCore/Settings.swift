@@ -18,8 +18,6 @@ public struct BridgeSettings: Codable, Equatable {
     public var vsCodeVersion = ""
     public var startOnLaunch = false
     public var automaticRestart = true
-    public var referenceRequiresOpenAIAuth = true
-    public var referenceReasoningSummaries = true
     public init() {}
     public var host: String { scope == .local ? "127.0.0.1" : "0.0.0.0" }
 
@@ -83,34 +81,6 @@ public struct BridgeSettings: Codable, Equatable {
         return env
     }
 
-    public func referenceConfig(hostName: String = "<this-mac-lan-address>") -> String {
-        let address = scope == .local ? "127.0.0.1" : hostName
-        let selectedModel = model.isEmpty ? "<choose-an-available-copilot-model>" : model
-        var lines = [
-            "# Reference only: merge into your existing config.toml; do not replace the file.",
-            "# Place top-level keys before all [tables]. Update existing keys instead of duplicating them.",
-            "model_provider = \"bridge\"",
-            "model = \(Self.toml(selectedModel))"
-        ]
-        if referenceReasoningSummaries {
-            lines += ["model_supports_reasoning_summaries = true", "model_reasoning_summary = \"auto\""]
-        }
-        lines += ["", "[model_providers.bridge]", "name = \"Copilot Bridge\"",
-                  "base_url = \(Self.toml("http://\(address):\(port)/v1"))",
-                  "wire_api = \"responses\"", "supports_websockets = false",
-                  "requires_openai_auth = \(referenceRequiresOpenAIAuth)"]
-        if scope == .lan {
-            lines += ["", "# LAN access requires no key. Use trusted networks only; never expose this to the public internet."]
-        }
-        return lines.joined(separator: "\n") + "\n"
-    }
-
-    private static func toml(_ text: String) -> String {
-        "\"" + text.replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "\n", with: "\\n")
-            .replacingOccurrences(of: "\r", with: "\\r") + "\""
-    }
 }
 
 public enum BridgeError: LocalizedError {

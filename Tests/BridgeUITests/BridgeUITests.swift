@@ -47,7 +47,10 @@ final class BridgeUITests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         try seedSyntheticHistory(at: root.appendingPathComponent("data"))
         let controller = BridgeController(root: root.appendingPathComponent("data"), backend: nil,
-                                          home: root, heartbeat: 1000)
+                                          home: root, heartbeat: 1000,
+                                          configPlanner: { _ in
+            try JSONDecoder().decode(CodexPlanResult.self, from: Data(#"{"ok":true,"mode":"off","reserved":false,"profileOverride":false}"#.utf8))
+        })
         XCTAssertEqual(controller.state, .stopped)
         XCTAssertNil(controller.servicePID)
         // Optional developer artifact directory, not a screenshot of any real app.

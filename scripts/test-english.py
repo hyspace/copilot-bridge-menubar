@@ -9,6 +9,7 @@ import re
 
 root = Path(__file__).resolve().parent.parent
 paths = list((root / "Sources").rglob("*.swift"))
+paths += [p for p in (root / "backend").glob("*.ts") if not p.name.endswith(".test.ts")]
 paths += list((root / "resources").glob("*.plist"))
 paths += list((root / "docs").rglob("*.md"))
 paths += list(root.glob("*.md"))

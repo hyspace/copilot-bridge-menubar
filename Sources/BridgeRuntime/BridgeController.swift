@@ -2,7 +2,6 @@ import AppKit
 import Foundation
 import Combine
 import ServiceManagement
-import SystemConfiguration
 import BridgeCore
 import Darwin
 
@@ -24,6 +23,13 @@ public final class BridgeController: ObservableObject {
     @Published public private(set) var loginItemEnabled = false
     @Published public private(set) var isFetchingQuota = false
     @Published public private(set) var servicePID: Int32?
+    @Published public private(set) var codexSwitch = CodexSwitchStatus()
+    @Published public private(set) var isUpdatingCodex = false
+    @Published private var pendingCodexValue: Bool?
+    private let codexManager: CodexConfigManager
+    private let codexHomeError: String?
+    private let configQueue = DispatchQueue(label: "com.hyspace.bridge.codex-config")
+    private var lastCodexCheck = Date.distantPast
     private var service: Process?
     private var output: ProcessOutput?
     private var pipes: [Pipe] = []
@@ -59,14 +65,21 @@ public final class BridgeController: ObservableObject {
         self.init(root: root,
             backend: Bundle.main.url(forResource: "copilot-bridge-service", withExtension: nil),
             home: FileManager.default.homeDirectoryForCurrentUser,
-            launchFromArguments: CommandLine.arguments.contains("--start-service"))
+            launchFromArguments: CommandLine.arguments.contains("--start-service"),
+            codexHome: ProcessInfo.processInfo.environment["CODEX_HOME"].flatMap {
+                $0.hasPrefix("/") ? URL(fileURLWithPath: $0, isDirectory: true) : nil
+            },
+            codexHomeError: ProcessInfo.processInfo.environment["CODEX_HOME"].map {
+                $0.hasPrefix("/") ? nil : "CODEX_HOME must be an absolute path. Codex configuration switching is disabled."
+            } ?? nil)
     }
 
     // Dependency injection is internal and only used by native integration tests.
     // Release callers cannot replace the bundled backend through an environment flag.
     init(root: URL, backend: URL?, home: URL, heartbeat: TimeInterval = 1,
          shutdownGrace: TimeInterval = 5, retryScale: Double = 1, launchFromArguments: Bool = false,
-         healthInterval: TimeInterval = 5, startupTimeout: TimeInterval = 90) {
+         healthInterval: TimeInterval = 5, startupTimeout: TimeInterval = 90, codexHome: URL? = nil,
+         configPlanner: CodexConfigManager.Planner? = nil, codexHomeError: String? = nil) {
         self.root = root
         self.backend = backend
         self.home = home
@@ -74,6 +87,10 @@ public final class BridgeController: ObservableObject {
         self.retryScale = retryScale
         self.healthInterval = healthInterval
         self.startupTimeout = startupTimeout
+        self.codexHomeError = codexHomeError
+        let planner = CodexConfigPlanner(executable: backend, home: home)
+        codexManager = CodexConfigManager(home: codexHome ?? home.appendingPathComponent(".codex"),
+                                         dataRoot: root, planner: configPlanner ?? planner.plan)
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 10
         configuration.timeoutIntervalForResource = 15
@@ -93,6 +110,7 @@ public final class BridgeController: ObservableObject {
             Task { @MainActor [weak self] in self?.tick() }
         }
         if settings.startOnLaunch || launchFromArguments { start() }
+        refreshCodexConfiguration()
     }
 
     deinit {
@@ -109,7 +127,7 @@ public final class BridgeController: ObservableObject {
     public var loginStatus: String {
         FileManager.default.fileExists(atPath: home
             .appendingPathComponent(".local/share/copilot-bridge/github_token").path)
-            ? "CLI credentials found; GitHub verifies whether they are valid." : "No GitHub credentials found."
+            ? "Saved GitHub credentials found; validity is checked when connecting." : "No GitHub credentials found."
     }
 
     public func save() -> Bool {
@@ -213,15 +231,50 @@ public final class BridgeController: ObservableObject {
         guard let login else { return }
         NSPasteboard.general.clearContents(); NSPasteboard.general.setString(login.code, forType: .string)
     }
-    public func copyReference() {
-        do {
-            _ = try settings.validated()
-            let host = (SCDynamicStoreCopyLocalHostName(nil) as String?).map { $0 + ".local" }
-                ?? "<this-mac-lan-address>"
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(settings.referenceConfig(hostName: host), forType: .string)
-            message = "Reference configuration copied. Existing files were not changed."
-        } catch { message = error.localizedDescription }
+    public var codexConfigPath: String { codexManager.configURL.path }
+    public var codexToggleValue: Bool { pendingCodexValue ?? codexSwitch.enabled }
+    public var codexConfigPort: Int { (currentSettings ?? settings).port }
+    public func openCodexBackups() {
+        guard FileManager.default.fileExists(atPath: codexManager.backupsURL.path) else {
+            message = "No Codex configuration backups have been created yet."; return
+        }
+        NSWorkspace.shared.open(codexManager.backupsURL)
+    }
+    public func refreshCodexConfiguration() {
+        guard !isUpdatingCodex else { return }
+        if let codexHomeError { codexSwitch.message = codexHomeError; return }
+        isUpdatingCodex = true; lastCodexCheck = Date()
+        let manager = codexManager, port = codexConfigPort
+        configQueue.async { [weak self] in
+            let result = manager.status(port: port)
+            DispatchQueue.main.async {
+                self?.codexSwitch = result; self?.isUpdatingCodex = false
+            }
+        }
+    }
+    public func setCodexEnabled(_ enabled: Bool) {
+        guard !isUpdatingCodex, !quitting else { return }
+        if let codexHomeError { message = codexHomeError; return }
+        if enabled {
+            do { _ = try settings.validated() }
+            catch { message = error.localizedDescription; return }
+        }
+        isUpdatingCodex = true; pendingCodexValue = enabled
+        let manager = codexManager, port = codexConfigPort
+        configQueue.async { [weak self] in
+            var errorMessage: String?
+            do { try manager.setEnabled(enabled, port: port) }
+            catch { errorMessage = error.localizedDescription }
+            let status = manager.status(port: port)
+            DispatchQueue.main.async {
+                self?.codexSwitch = status
+                self?.isUpdatingCodex = false
+                self?.pendingCodexValue = nil
+                self?.message = errorMessage ?? (enabled
+                    ? "Bridge routing saved. Start the Bridge service, then restart Codex App."
+                    : "Codex routing switched back. Restart Codex App to apply.")
+            }
+        }
     }
     public func openLogs() { NSWorkspace.shared.open(root.appendingPathComponent("Logs")) }
     public func setLoginItem(_ enabled: Bool) {
@@ -244,6 +297,7 @@ public final class BridgeController: ObservableObject {
     }
 
     private func tick() {
+        if Date().timeIntervalSince(lastCodexCheck) >= 10 { refreshCodexConfiguration() }
         if let output {
             let snapshot = output.snapshot()
             logs = snapshot.lines

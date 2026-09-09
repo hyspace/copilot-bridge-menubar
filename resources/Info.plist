@@ -14,7 +14,7 @@
   <key>NSHighResolutionCapable</key><true/>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleLocalizations</key><array><string>en</string></array>
-  <key>NSLocalNetworkUsageDescription</key><string>Check the local bridge service and serve trusted devices when you enable LAN access.</string>
+  <key>NSLocalNetworkUsageDescription</key><string>Connect Codex App to the local Bridge service and allow trusted Macs when LAN access is enabled.</string>
   <key>NSAppTransportSecurity</key><dict>
     <key>NSAllowsLocalNetworking</key><true/>
     <key>NSExceptionDomains</key><dict><key>127.0.0.1</key><dict>

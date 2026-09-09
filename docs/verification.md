@@ -7,9 +7,15 @@
 - The executable version matches the release tag, and the bundle records the
   exact CLI submodule SHA.
 - CLI fork suite: **356 tests passed**.
-- App native suite: **61 tests passed** (configuration/accounting, real owned
+- App native suite: **84 tests passed** (configuration/accounting, real owned
   process lifecycle against a fake backend, and offscreen rendering of our own UI).
 - App/CLI event contract test passes.
+- Backend suite: **18 tests passed**, including lossless Codex TOML planning.
+- **23 configuration transaction tests** cover exact/missing/empty-file restore,
+  unrelated edits, read-only files, symlinks/hard links, backup/manifest integrity,
+  OS locking, concurrent writes before and after swap, crash recovery, manual
+  Bridge adoption and private bounded planner IPC. They also run against the
+  actual signed, bundled configuration helper.
 - Staged CLI stream regression suite: **34 tests passed**.
 - Fake GitHub auth: pending → success, denial, private credential file, natural
   one-shot process exit.

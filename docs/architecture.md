@@ -7,12 +7,14 @@ NSStatusItem + transient NSPopover (SwiftUI, LSUIElement)
        ├─ bounded nonblocking pipe readers → sanitised rotating logs
        ├─ usage JSONL → daily/model token and billing aggregates
        ├─ loopback health check with per-launch instance identifier
-       └─ loopback /usage → daily account-balance snapshots + quota UI
+       ├─ loopback /usage → daily account-balance snapshots + quota UI
+       └─ explicit Codex App routing switch → locked, journaled config transactions
 
 Compiled Bun backend
   ├─ pinned hyspace/copilot-bridge CLI (Git submodule)
   ├─ same start/auth routines and credential refresh
   ├─ byte-transparent upstream usage observer (no tee/read-ahead)
+  ├─ isolated pure TOML planner (no filesystem mutation or provider calls)
   ├─ parent-PID watchdog
   └─ pinned CLI health identity and usage events
 ```
@@ -22,6 +24,12 @@ and OS integrations (`BridgeRuntime`), reusable menu content (`BridgeUI`), and t
 application entry point (`BridgeMenuBar`) separate. The runtime's backend/home
 injection is internal to the module for tests; release users cannot select an
 arbitrary executable through an environment variable.
+
+Codex App is the only supported client. Native `CodexConfigManager` owns private
+backups, hashes, locks and atomic swaps. A bounded private pipe to the bundled
+TOML planner computes lossless edits. Only an explicit switch action mutates
+Codex config; launch, service startup, quit and installation do not. See
+[`configuration.md`](configuration.md) for restore and crash-recovery semantics.
 
 ## Lifecycle
 
@@ -60,7 +68,7 @@ from a live listener; actual occupied ports remain protected.
   credits. Remaining account quota is a separate card; see `activity.md`.
 - Retry-response observation is capped at one second and 4 MiB. Repeated stream
   snapshots replace counters rather than being counted as additional charges.
-- SSE observation uses a 256 KiB event cap; JSON observation uses a 4 MiB cap.
+- SSE/JSON observation uses an 8M-character cap.
   Oversized bodies are still forwarded unchanged but usage may be unavailable.
 - No response clone/tee branch for model streaming. Downstream cancellation
   cancels the observer's upstream reader. The pinned CLI normalizer is also pull-driven and cancellation-aware; malformed unterminated
@@ -104,5 +112,5 @@ bridge-internal model calls, not just user turns.
 
 GitHub's internal quota API may change. Credits are shown in returned units,
 without guessing USD conversions. Quota failures do not stop the model service.
-No historical CLI token reconstruction, no WebSocket support, no silent config
+No historical standalone-service token reconstruction, no WebSocket support, no silent config
 rewrites, and no claim of a formal memory-leak proof.
