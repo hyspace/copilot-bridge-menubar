@@ -4,6 +4,7 @@ class CopilotBridgeMenubar < Formula
   homepage "https://github.com/hyspace/copilot-bridge-menubar"
   url "https://github.com/hyspace/copilot-bridge-menubar/releases/download/v0.1.0/Copilot-Bridge-arm64.zip"
   version "0.1.0"
+  revision 1
   sha256 "8b04ee69533bebe18259f85e6b2e3d09b576c386fc0e54163fb604def19a19e8"
   license "MIT"
 
@@ -17,7 +18,8 @@ class CopilotBridgeMenubar < Formula
     elsif (buildpath/"Contents/Info.plist").file?
       # Some archive strategies enter the archive's only top-level directory.
       (libexec/"Copilot Bridge.app").mkpath
-      (libexec/"Copilot Bridge.app").install buildpath.children
+      # Homebrew may add staging metadata beside Contents. It is not signed app content.
+      (libexec/"Copilot Bridge.app").install "Contents"
     else
       odie "Release archive does not contain Copilot Bridge.app"
     end
@@ -55,6 +57,7 @@ class CopilotBridgeMenubar < Formula
   end
 
   test do
+    assert_equal ["Contents"], (libexec/"Copilot Bridge.app").children.map { |path| path.basename.to_s }.sort
     assert_match version.to_s, shell_output("#{bin}/copilot-bridge-menubar --version")
     assert_predicate libexec/"Copilot Bridge.app/Contents/Resources/copilot-bridge-service", :executable?
     system "/usr/bin/codesign", "--verify", "--deep", "--strict", libexec/"Copilot Bridge.app"

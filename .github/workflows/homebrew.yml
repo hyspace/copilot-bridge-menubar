@@ -1,0 +1,26 @@
+name: Published Homebrew install
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Formula/**"
+      - "scripts/update-formula.py"
+      - ".github/workflows/homebrew.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  install-and-verify:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - name: Install and test the public formula without starting any service
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: |
+          test "$(uname -m)" = arm64
+          brew tap hyspace/copilot-bridge-menubar "https://github.com/$GITHUB_REPOSITORY"
+          brew install hyspace/copilot-bridge-menubar/copilot-bridge-menubar
+          brew test hyspace/copilot-bridge-menubar/copilot-bridge-menubar
+          copilot-bridge-menubar --version
+          /usr/bin/codesign --verify --deep --strict "$(brew --prefix copilot-bridge-menubar)/libexec/Copilot Bridge.app"

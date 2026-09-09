@@ -17,6 +17,7 @@ with tempfile.TemporaryDirectory(prefix="cbm-formula-test-") as temp:
     assert checksum in text and "class CopilotBridgeMenubar < Formula" in text
     assert "cask " not in text
     assert "--foreground" in text and "keep_alive false" in text
+    assert '.install "Contents"' in text and "install buildpath.children" not in text
     assert run(sha="fake").returncode!=0
     assert run(repo='bad/"injection').returncode!=0
     assert run(version="0.2.0").returncode==0
