@@ -2,26 +2,27 @@ import AppKit
 import Foundation
 import Combine
 import ServiceManagement
+import SystemConfiguration
 import BridgeCore
 import Darwin
 
-enum ServiceState: String { case stopped = "已停止", starting = "正在启动", running = "运行中", stopping = "正在停止", login = "等待授权", failed = "启动失败", backoff = "等待重试" }
+public enum ServiceState: String { case stopped = "已停止", starting = "正在启动", running = "运行中", stopping = "正在停止", login = "等待授权", failed = "启动失败", backoff = "等待重试" }
 
 @MainActor
-final class BridgeController: ObservableObject {
-    @Published var settings = BridgeSettings()
-    @Published var state: ServiceState = .stopped
-    @Published var message = ""
-    @Published var logs: [String] = []
-    @Published var login: LoginPrompt?
-    @Published var today = UsageTotals()
-    @Published var total = UsageTotals()
-    @Published var quota: QuotaSnapshot?
-    @Published var quotaError = ""
-    @Published var quotaDate: Date?
-    @Published var loginItemEnabled = false
-    @Published var isFetchingQuota = false
-    @Published var servicePID: Int32?
+public final class BridgeController: ObservableObject {
+    @Published public var settings = BridgeSettings()
+    @Published public private(set) var state: ServiceState = .stopped
+    @Published public private(set) var message = ""
+    @Published public private(set) var logs: [String] = []
+    @Published public private(set) var login: LoginPrompt?
+    @Published public private(set) var today = UsageTotals()
+    @Published public private(set) var total = UsageTotals()
+    @Published public private(set) var quota: QuotaSnapshot?
+    @Published public private(set) var quotaError = ""
+    @Published public private(set) var quotaDate: Date?
+    @Published public private(set) var loginItemEnabled = false
+    @Published public private(set) var isFetchingQuota = false
+    @Published public private(set) var servicePID: Int32?
     private var service: Process?
     private var output: ProcessOutput?
     private var pipes: [Pipe] = []
@@ -45,9 +46,32 @@ final class BridgeController: ObservableObject {
     private var store: UsageStore?
     private let root: URL
     private let session: URLSession
+    private let backend: URL?
+    private let home: URL
+    private let shutdownGrace: TimeInterval
+    private let retryScale: Double
+    private let healthInterval: TimeInterval
+    private let startupTimeout: TimeInterval
 
-    init(root: URL = AppPaths.root) {
+    public convenience init(root: URL = AppPaths.root) {
+        self.init(root: root,
+            backend: Bundle.main.url(forResource: "copilot-bridge-service", withExtension: nil),
+            home: FileManager.default.homeDirectoryForCurrentUser,
+            launchFromArguments: CommandLine.arguments.contains("--start-service"))
+    }
+
+    // Dependency injection is internal and only used by native integration tests.
+    // Release callers cannot replace the bundled backend through an environment flag.
+    init(root: URL, backend: URL?, home: URL, heartbeat: TimeInterval = 1,
+         shutdownGrace: TimeInterval = 5, retryScale: Double = 1, launchFromArguments: Bool = false,
+         healthInterval: TimeInterval = 5, startupTimeout: TimeInterval = 90) {
         self.root = root
+        self.backend = backend
+        self.home = home
+        self.shutdownGrace = shutdownGrace
+        self.retryScale = retryScale
+        self.healthInterval = healthInterval
+        self.startupTimeout = startupTimeout
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 10
         configuration.timeoutIntervalForResource = 15
@@ -59,10 +83,10 @@ final class BridgeController: ObservableObject {
             store = try UsageStore(url: root.appendingPathComponent("usage.sqlite"))
         } catch { message = error.localizedDescription }
         loginItemEnabled = SMAppService.mainApp.status == .enabled
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: heartbeat, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.tick() }
         }
-        if settings.startOnLaunch || CommandLine.arguments.contains("--start-service") { start() }
+        if settings.startOnLaunch || launchFromArguments { start() }
     }
 
     deinit {
@@ -73,20 +97,20 @@ final class BridgeController: ObservableObject {
         if let service, service.isRunning { service.terminate() }
     }
 
-    var isActive: Bool { service != nil || state == .backoff }
-    var endpoint: String { "http://127.0.0.1:\((currentSettings ?? settings).port)/v1" }
-    var hasUnsavedChanges: Bool { currentSettings.map { $0 != settings } ?? false }
-    var loginStatus: String {
-        FileManager.default.fileExists(atPath: FileManager.default.homeDirectoryForCurrentUser
+    public var isActive: Bool { service != nil || state == .backoff }
+    public var endpoint: String { "http://127.0.0.1:\((currentSettings ?? settings).port)/v1" }
+    public var hasUnsavedChanges: Bool { currentSettings.map { $0 != settings } ?? false }
+    public var loginStatus: String {
+        FileManager.default.fileExists(atPath: home
             .appendingPathComponent(".local/share/copilot-bridge/github_token").path)
             ? "发现 CLI 缓存凭据（有效性由 GitHub 确认）" : "尚未找到 GitHub 登录凭据"
     }
 
-    func save() -> Bool {
+    public func save() -> Bool {
         do { try AppPaths.saveSettings(settings, root: root); message = ""; return true }
         catch { message = error.localizedDescription; return false }
     }
-    func start(loginOnly: Bool = false, automatic: Bool = false) {
+    public func start(loginOnly: Bool = false, automatic: Bool = false) {
         guard service == nil, !quitting else { return }
         guard save() else { return }
         if !automatic { restartPolicy.reset() }
@@ -96,7 +120,7 @@ final class BridgeController: ObservableObject {
             message = "端口 \(settings.port) 已被占用。不会接管或杀死现有 CLI；请先停止它，或在设置中换端口。"
             return
         }
-        guard let binary = Bundle.main.url(forResource: "copilot-bridge-service", withExtension: nil),
+        guard let binary = backend,
               FileManager.default.isExecutableFile(atPath: binary.path) else {
             state = .failed; message = "缺少内置 Apple Silicon 服务。请使用 scripts/build-app.sh 生成完整 .app。"; return
         }
@@ -106,12 +130,15 @@ final class BridgeController: ObservableObject {
             instance = UUID().uuidString
             let child = Process()
             let stdout = Pipe(), stderr = Pipe()
-            let pump = try ProcessOutput(root: root, secrets: [lanKey].compactMap { $0 })
+            let eventToken = UUID().uuidString + UUID().uuidString
+            let pump = try ProcessOutput(root: root, secrets: [lanKey, eventToken].compactMap { $0 },
+                                         eventToken: eventToken)
             child.executableURL = binary
             child.arguments = settings.arguments(authOnly: loginOnly)
             child.environment = settings.environment(inheriting: ProcessInfo.processInfo.environment,
-                home: FileManager.default.homeDirectoryForCurrentUser.path,
-                parentPID: ProcessInfo.processInfo.processIdentifier, instance: instance, lanKey: lanKey)
+                home: home.path,
+                parentPID: ProcessInfo.processInfo.processIdentifier, instance: instance,
+                lanKey: lanKey, eventToken: eventToken)
             child.currentDirectoryURL = root
             child.standardInput = FileHandle.nullDevice
             child.standardOutput = stdout; child.standardError = stderr
@@ -147,7 +174,7 @@ final class BridgeController: ObservableObject {
         }
     }
 
-    func stop(restart: Bool = false) {
+    public func stop(restart: Bool = false) {
         pendingRestart = restart
         restartTask?.cancel(); restartTask = nil
         healthTask?.cancel(); healthTask = nil
@@ -160,39 +187,40 @@ final class BridgeController: ObservableObject {
         intentionallyStopping = true; state = .stopping
         if service.isRunning { service.terminate() }
         stopTask?.cancel()
+        let grace = shutdownGrace
         stopTask = Task { [weak self, weak service] in
-            try? await Task.sleep(for: .seconds(5))
+            try? await Task.sleep(for: .seconds(grace))
             guard !Task.isCancelled, let self, let service,
                   self.service === service, service.isRunning else { return }
             kill(service.processIdentifier, SIGKILL)
         }
     }
 
-    func signIn() {
+    public func signIn() {
         if isActive { message = "请先停止服务，再重新授权，避免两个进程同时更新凭据。"; return }
         start(loginOnly: true)
     }
-    func openLogin() {
+    public func openLogin() {
         guard login != nil else { return }
         NSWorkspace.shared.open(URL(string: "https://github.com/login/device")!)
     }
-    func copyDeviceCode() {
+    public func copyDeviceCode() {
         guard let login else { return }
         NSPasteboard.general.clearContents(); NSPasteboard.general.setString(login.code, forType: .string)
     }
-    func copyReference() {
+    public func copyReference() {
         do {
             _ = try settings.validated()
             let key = settings.scope == .lan ? try AccessKey.loadOrCreate() : nil
-            let host = Host.current().localizedName?.replacingOccurrences(of: " ", with: "-").appending(".local")
+            let host = (SCDynamicStoreCopyLocalHostName(nil) as String?).map { $0 + ".local" }
                 ?? "<此 Mac 的局域网地址>"
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(settings.referenceConfig(lanKey: key, hostName: host), forType: .string)
             message = "参考配置已复制；没有修改 Codex 配置。局域网地址请核对实际主机名/IP。"
         } catch { message = error.localizedDescription }
     }
-    func openLogs() { NSWorkspace.shared.open(root.appendingPathComponent("Logs")) }
-    func setLoginItem(_ enabled: Bool) {
+    public func openLogs() { NSWorkspace.shared.open(root.appendingPathComponent("Logs")) }
+    public func setLoginItem(_ enabled: Bool) {
         do {
             if enabled { try SMAppService.mainApp.register() }
             else { try SMAppService.mainApp.unregister() }
@@ -203,7 +231,7 @@ final class BridgeController: ObservableObject {
             }
         } catch { message = "登录项设置失败：\(error.localizedDescription)" }
     }
-    func quit() {
+    public func quit() {
         quitting = true; timer?.invalidate(); timer = nil
         restartTask?.cancel(); restartTask = nil
         if service == nil {
@@ -216,13 +244,20 @@ final class BridgeController: ObservableObject {
             let snapshot = output.snapshot()
             logs = snapshot.lines
             if let failure = snapshot.failure { message = failure }
-            if let prompt = snapshot.login, prompt.expires > Date() {
-                login = prompt
-                if state != .stopping { state = .login }
-            } else if login != nil {
+            if snapshot.authenticated {
                 login = nil
-                if service != nil && state == .login {
-                    message = "设备授权已过期，请重新登录。"; stop()
+                if state == .login {
+                    state = .starting
+                    startedAt = Date() // Device authorization time is not startup time.
+                }
+            } else if let prompt = snapshot.login {
+                if prompt.expires > Date() {
+                    login = prompt
+                    if state != .stopping { state = .login }
+                } else if service != nil && state == .login {
+                    login = nil
+                    message = "设备授权已过期，请重新登录。"
+                    stop()
                 }
             }
         }
@@ -230,15 +265,19 @@ final class BridgeController: ObservableObject {
             today = try store?.totals(today: true) ?? UsageTotals()
             total = try store?.totals(today: false) ?? UsageTotals()
         } catch { message = error.localizedDescription }
+        if service != nil && state == .starting && Date().timeIntervalSince(startedAt) > startupTimeout {
+            message = authOnly
+                ? "获取授权信息或初始化超时；已停止，请检查网络后重新授权。"
+                : "服务启动超过 \(Int(startupTimeout)) 秒；已停止以避免无限等待。请检查代理或登录。"
+            stop()
+            return
+        }
         if authOnly || service == nil || state == .stopping { return }
-        if healthTask == nil && Date().timeIntervalSince(lastHealth) >= 5 {
+        if healthTask == nil && Date().timeIntervalSince(lastHealth) >= healthInterval {
             lastHealth = Date(); checkHealth()
         }
         if state == .running, quotaTask == nil, Date().timeIntervalSince(quotaDate ?? .distantPast) >= 300 {
             refreshQuota()
-        }
-        if state == .starting && Date().timeIntervalSince(startedAt) > 90 {
-            message = "服务启动超过 90 秒；已停止以避免无限等待。请检查代理或登录。"; stop()
         }
     }
 
@@ -250,7 +289,7 @@ final class BridgeController: ObservableObject {
         return request
     }
     private func checkHealth() {
-        guard let request = request("/__menubar/health", timeout: 3) else { return }
+        guard let request = request("/healthz", timeout: 3) else { return }
         let expected = instance
         healthTask = Task { [weak self] in
             guard let self else { return }
@@ -274,7 +313,7 @@ final class BridgeController: ObservableObject {
             }
         }
     }
-    func refreshQuota() {
+    public func refreshQuota() {
         guard quotaTask == nil, state == .running, let request = request("/usage") else { return }
         let expected = instance
         isFetchingQuota = true
@@ -322,8 +361,9 @@ final class BridgeController: ObservableObject {
             message += " 已停止自动重启；请检查日志。"; return
         }
         state = .backoff; message += " \(Int(delay)) 秒后重试。"
+        let retryDelay = delay * retryScale
         restartTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(delay))
+            try? await Task.sleep(for: .seconds(retryDelay))
             guard !Task.isCancelled else { return }
             self?.start(automatic: true)
         }
@@ -339,6 +379,11 @@ final class BridgeController: ObservableObject {
         let descriptor = socket(AF_INET, SOCK_STREAM, 0)
         guard descriptor >= 0 else { return false }
         defer { close(descriptor) }
+        // Match server socket reuse semantics. A just-closed connection in TIME_WAIT
+        // is not a live listener and must not make an ordinary restart look occupied.
+        var reuse: Int32 = 1
+        guard setsockopt(descriptor, SOL_SOCKET, SO_REUSEADDR, &reuse,
+                         socklen_t(MemoryLayout.size(ofValue: reuse))) == 0 else { return false }
         var address = sockaddr_in()
         address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
         address.sin_family = sa_family_t(AF_INET)

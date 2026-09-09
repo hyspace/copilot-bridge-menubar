@@ -1,9 +1,9 @@
 import Foundation
 import BridgeCore
 
-struct LoginPrompt: Equatable {
-    var code: String
-    var expires: Date
+public struct LoginPrompt: Equatable {
+    public var code: String
+    public var expires: Date
 }
 
 /// Pipe handlers consume synchronously. No unbounded Task/DispatchQueue backlog per token.
@@ -14,12 +14,14 @@ final class ProcessOutput {
     private let log: RotatingLog
     private let store: UsageStore
     private let secrets: [String]
+    private let eventToken: String
     private var lines: [String] = []
     private var login: LoginPrompt?
     private var authenticated = false
     private var failure: String?
-    init(root: URL, secrets: [String]) throws {
+    init(root: URL, secrets: [String], eventToken: String) throws {
         self.secrets = secrets
+        self.eventToken = eventToken
         self.log = try RotatingLog(root: root.appendingPathComponent("Logs"))
         self.store = try UsageStore(url: root.appendingPathComponent("usage.sqlite"))
     }
@@ -29,17 +31,23 @@ final class ProcessOutput {
         for raw in batch {
             if raw.hasPrefix("@@CBM:") {
                 let json = Data(raw.dropFirst(6).utf8)
+                guard let object = (try? JSONSerialization.jsonObject(with: json)) as? [String: Any],
+                      !eventToken.isEmpty, object["channel"] as? String == eventToken else {
+                    append("[忽略未验证的诊断事件]")
+                    continue
+                }
                 if let event = try? JSONDecoder().decode(UsageEvent.self, from: json), event.kind == "usage" {
                     do { try store.record(event) }
                     catch { append("用量写入失败：\(error.localizedDescription)") }
                     continue
                 }
-                if let object = (try? JSONSerialization.jsonObject(with: json)) as? [String: Any] {
+                do {
                     switch object["kind"] as? String {
                     case "authRequired":
                         if let code = object["code"] as? String,
                            code.range(of: #"^[A-Z0-9]{4}-[A-Z0-9]{4}$"#, options: .regularExpression) != nil {
                             let seconds = min(max(object["expiresIn"] as? Double ?? 900, 1), 1800)
+                            authenticated = false
                             login = LoginPrompt(code: code, expires: Date().addingTimeInterval(seconds))
                             append("需要 GitHub 设备授权；请在菜单中完成登录。")
                         }

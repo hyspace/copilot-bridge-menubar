@@ -80,7 +80,7 @@ def wait_ready(service_port, process):
     for _ in range(100):
         assert process.poll() is None, "Isolated backend exited unexpectedly"
         try:
-            status, data = fetch(service_port, "/__menubar/health")
+            status, data = fetch(service_port, "/healthz")
             if status == 200:
                 assert json.loads(data)["instance"] == "integration"
                 return
@@ -97,7 +97,8 @@ with tempfile.TemporaryDirectory(prefix="cbm-integration-") as directory:
     config.write_text('model = "gpt-6-astra"\n')
     env = {"HOME": str(home), "PATH": "/usr/bin:/bin", "NO_COLOR": "1", "NO_PROXY":"*",
         "COPILOT_TOKEN":"FAKE_COPILOT_TEST_TOKEN", "COPILOT_BASE_URL":f"http://127.0.0.1:{mock.server_port}",
-        "CBM_LAN_KEY":"FAKE_LAN_KEY", "CBM_INSTANCE_ID":"integration", "CBM_PARENT_PID":str(os.getpid())}
+        "COPILOT_BRIDGE_ACCESS_KEY":"FAKE_LAN_KEY", "COPILOT_BRIDGE_INSTANCE_ID":"integration",
+        "COPILOT_BRIDGE_EVENTS_TOKEN":"FAKE_EVENTS_CHANNEL", "CBM_PARENT_PID":str(os.getpid())}
     p = port()
     args = [str(BINARY),"start","--host","127.0.0.1","--port",str(p),
             "--no-codex-setup","--no-claude-setup","--no-prompt"]

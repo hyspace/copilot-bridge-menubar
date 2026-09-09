@@ -32,6 +32,7 @@ jobs:
           bun vendor/copilot-bridge/node_modules/typescript/bin/tsc --noEmit
           bun test backend
           (cd vendor/copilot-bridge && bun test)
+          python3 scripts/test-formula.py
           swift test --disable-sandbox
           python3 scripts/build-backend.py
           python3 scripts/test-auth.py

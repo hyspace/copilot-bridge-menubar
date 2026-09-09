@@ -14,8 +14,14 @@ Compiled Bun backend
   ├─ same start/auth routines and credential refresh
   ├─ byte-transparent upstream usage observer (no tee/read-ahead)
   ├─ parent-PID watchdog
-  └─ build-stage-only middleware: LAN key + health identity
+  └─ pinned CLI middleware: LAN key + health identity
 ```
+
+Swift targets keep pure configuration/accounting (`BridgeCore`), process ownership
+and OS integrations (`BridgeRuntime`), reusable menu content (`BridgeUI`), and the
+application entry point (`BridgeMenuBar`) separate. The runtime's backend/home
+injection is internal to the module for tests; release users cannot select an
+arbitrary executable through an environment variable.
 
 ## Lifecycle
 
@@ -36,6 +42,11 @@ by killing somebody else's listener.
 Health checks are bounded and verify a per-launch identity. A timeout alone does
 not prove death and does not kill a busy model request. Starting and device-auth
 states have deadlines; the user can explicitly cancel.
+Receiving auth success clears the device prompt without treating it as expiry.
+The startup clock resets after a human finishes device authorization. Even the
+initial auth request (before any device code arrives) has a bounded deadline.
+Port preflight uses `SO_REUSEADDR` to distinguish recent TIME_WAIT connections
+from a live listener; actual occupied ports remain protected.
 
 ## Resource bounds
 
@@ -49,26 +60,23 @@ states have deadlines; the user can explicitly cancel.
 - SSE observation uses a 256 KiB event cap; JSON observation uses a 4 MiB cap.
   Oversized bodies are still forwarded unchanged but usage may be unavailable.
 - No response clone/tee branch for model streaming. Downstream cancellation
-  cancels the observer's upstream reader. A build-stage overlay also makes the
-  CLI's normalizer pull-driven and cancellation-aware; malformed unterminated
+  cancels the observer's upstream reader. The pinned CLI normalizer is also pull-driven and cancellation-aware; malformed unterminated
   SSE frames are rejected above 8 MiB instead of buffering forever.
 
-## Build overlays
+## Upstream ownership and packaging
 
-`scripts/build-backend.py` copies the pinned CLI to a disposable staging tree and
-applies anchored, fail-closed transformations:
+General bridge improvements are committed in the `hyspace/copilot-bridge` fork:
 
-1. Require a constant-time checked LAN access header when `CBM_LAN_KEY` is set.
-2. Add a process-identity health endpoint.
-3. Remove `Content-Length` and `Content-Encoding` from SSE bodies transformed by
-   the CLI normalizer. Reusing upstream length after JSON reserialization corrupts
-   the downstream HTTP body contract.
-4. Exit on listener errors, and make the SSE normalizer propagate backpressure,
-   cancellation and reader cleanup rather than draining in an eager start loop.
+1. Optional inbound access-key middleware and health instance identity.
+2. Optional authenticated JSONL usage/auth events; no model content is retained.
+3. Content header correction after SSE normalization, backpressure and cancellation.
+4. Deterministic listener-error exit and one-shot auth with non-overlapping refresh.
+5. Valid Codex WebSocket configuration and preservation of explicit OpenAI auth.
 
-An upstream ref update that changes an expected anchor fails the build rather
-than silently dropping the protection. The release executable embeds the staging
-source and Bun runtime; there is no source checkout dependency on the end-user Mac.
+`scripts/build-backend.py` copies the pinned source unchanged into a disposable
+build directory. It defines the CLI's supported compile-time version constant,
+then bundles the CLI and the small parent-watchdog entry point with Bun.
+There are no build-time source replacements. End users do not need Bun or a checkout.
 
 ## Security and accounting
 
@@ -78,8 +86,12 @@ environment (not process argv), and removed from upstream requests by the CLI's
 header allowlist. LAN HTTP still needs a trusted network; it is not TLS.
 
 GitHub login uses the existing CLI device flow and 0600 credential cache.
-The auth-only wrapper exits after success rather than leaving its refresh timer
+The CLI auth command exits after success rather than leaving its refresh timer
 alive forever. Expired and denied authorization have explicit UI states.
+
+The parent creates a fresh private event-channel token per launch. Only matching
+JSONL records can change auth/accounting state; untrusted error text cannot spoof
+a supervisor event merely by using the same line prefix.
 
 Telemetry records a request UUID, timestamp, model identifier, numeric usage,
 HTTP status and completion category. It never stores a prompt or model output.

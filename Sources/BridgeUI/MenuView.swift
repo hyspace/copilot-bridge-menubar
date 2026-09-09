@@ -1,12 +1,18 @@
 import SwiftUI
 import BridgeCore
+import BridgeRuntime
 
-struct MenuView: View {
+public struct MenuView: View {
     @ObservedObject var controller: BridgeController
     @State private var tab = 0
     @State private var showAllTime = false
 
-    var body: some View {
+    public init(controller: BridgeController, initialTab: Int = 0) {
+        self.controller = controller
+        self._tab = State(initialValue: initialTab)
+    }
+
+    public var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Image(systemName: "point.3.connected.trianglepath.dotted")
@@ -22,7 +28,7 @@ struct MenuView: View {
             }.padding(16)
             Picker("页面", selection: $tab) {
                 Text("概览").tag(0); Text("设置").tag(1); Text("日志").tag(2)
-            }.pickerStyle(.segmented).padding(.horizontal, 16).padding(.bottom, 12)
+            }.pickerStyle(.segmented).labelsHidden().padding(.horizontal, 16).padding(.bottom, 12)
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
@@ -40,7 +46,9 @@ struct MenuView: View {
             }
             Divider()
             HStack {
-                Text("v" + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"))
+                Text(Bundle.main.bundleIdentifier == "com.hyspace.copilot-bridge-menubar"
+                     ? "v" + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev")
+                     : "Development preview")
                     .font(.caption2).foregroundStyle(.tertiary)
                 Spacer()
                 Button("退出 App 并停止其服务") { controller.quit() }.buttonStyle(.borderless).font(.caption)
@@ -62,6 +70,7 @@ struct MenuView: View {
                             Button("启动服务") { controller.start() }.buttonStyle(.borderedProminent)
                         }
                         Spacer()
+                        Button("复制参考配置") { controller.copyReference() }.controlSize(.small)
                         if let pid = controller.servicePID { Text("PID \(pid)").font(.caption).foregroundStyle(.secondary) }
                     }
                     if controller.hasUnsavedChanges {
@@ -129,7 +138,6 @@ struct MenuView: View {
                     Text("复用 CLI 的设备授权及 token 自动刷新，不要求安装 Bun。").font(.caption2).foregroundStyle(.secondary)
                 }.frame(maxWidth: .infinity, alignment: .leading)
             } label: { Label("授权", systemImage: "person.badge.key") }
-            Button("复制 Codex 参考配置") { controller.copyReference() }
         }
     }
 

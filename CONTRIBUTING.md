@@ -6,7 +6,7 @@ Run the commands in README before opening a PR.
 
 - Never include real credentials, prompts, device codes, personal quota snapshots or local logs.
 - Never kill a development machine's existing bridge. Tests use random non-4142 ports and temporary HOME.
-- Keep the upstream submodule pinned. Explain and test changes to build overlays.
+- Keep the upstream submodule pinned. Commit general bridge fixes to the CLI fork, test them there, then update the submodule reference.
 - Do not add arbitrary shell execution, auto config rewriting, raw token logging or public-LAN defaults.
 - Use small commits and describe user-visible behavior, failure handling and testing.
 - New external actions must be pinned; dependency updates go through normal review.

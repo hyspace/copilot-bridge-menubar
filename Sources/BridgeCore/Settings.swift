@@ -58,7 +58,8 @@ public struct BridgeSettings: Codable, Equatable {
     }
 
     public func environment(inheriting source: [String: String], home: String,
-                            parentPID: Int32, instance: String, lanKey: String?) -> [String: String] {
+                            parentPID: Int32, instance: String, lanKey: String?,
+                            eventToken: String? = nil) -> [String: String] {
         // Do not inherit arbitrary runtime loaders, API credentials, or trace destinations.
         let allowed = ["PATH", "TMPDIR", "LANG", "LC_ALL", "SSL_CERT_FILE", "SSL_CERT_DIR",
                        "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy"]
@@ -69,7 +70,8 @@ public struct BridgeSettings: Codable, Equatable {
         env["FORCE_COLOR"] = "0"
         env["COPILOT_ACCOUNT_TYPE"] = accountType.rawValue
         env["CBM_PARENT_PID"] = String(parentPID)
-        env["CBM_INSTANCE_ID"] = instance
+        env["COPILOT_BRIDGE_INSTANCE_ID"] = instance
+        if let eventToken { env["COPILOT_BRIDGE_EVENTS_TOKEN"] = eventToken }
         if !upstreamURL.isEmpty { env["COPILOT_BASE_URL"] = upstreamURL }
         if !proxyURL.isEmpty {
             env["HTTPS_PROXY"] = proxyURL; env["HTTP_PROXY"] = proxyURL
@@ -78,7 +80,7 @@ public struct BridgeSettings: Codable, Equatable {
         env["NO_PROXY"] = noProxy
         env.removeValue(forKey: "no_proxy")
         if !vsCodeVersion.isEmpty { env["COPILOT_VSCODE_VERSION"] = vsCodeVersion }
-        if scope == .lan { env["CBM_LAN_KEY"] = lanKey }
+        if scope == .lan { env["COPILOT_BRIDGE_ACCESS_KEY"] = lanKey }
         return env
     }
 

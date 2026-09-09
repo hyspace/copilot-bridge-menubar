@@ -119,6 +119,7 @@ cd copilot-bridge-menubar
 cd vendor/copilot-bridge && bun install --frozen-lockfile && cd ../..
 bun test backend
 swift test --disable-sandbox
+python3 scripts/test-formula.py
 python3 scripts/build-backend.py
 python3 scripts/test-auth.py
 python3 scripts/integration-test.py
@@ -127,10 +128,12 @@ bash scripts/build-app.sh
 
 构建依赖：Apple Silicon Mac、Xcode/Command Line Tools（Swift 6+）、Python 3、Bun 1.4.1。
 Swift 包没有第三方远程依赖。底层 fork 通过 Git submodule 固定提交，JS 依赖由其 `bun.lock` 固定。
-本仓库只在 `.build/backend-stage` 中加 LAN 鉴权、健康标识和响应头修正，**不修改 submodule 或正在运行的 CLI**。
+LAN 鉴权、健康标识、token 观测、认证和流式修复都在固定的 CLI fork 提交中；本仓库只复制源码进行打包，**不做构建时源码补丁，也不重启现有 CLI**。
 
 测试只使用假的 GitHub/Copilot 上游、临时 HOME、随机非 4142 端口。
 测试前后校验当前 4142 监听进程不变，不读取真实凭据、不消耗真实模型额度。
+原生测试还覆盖菜单 App 的启动/停止、授权成功收尾、崩溃重试断路器、
+强制停止不响应 SIGTERM 的**测试子进程**，以及本 App 视图的离屏渲染。
 
 更多：[架构](docs/architecture.md) · [发布](docs/releasing.md) · [贡献](CONTRIBUTING.md) · [安全](SECURITY.md)
 

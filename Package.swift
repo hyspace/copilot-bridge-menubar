@@ -8,8 +8,13 @@ let package = Package(
     targets: [
         .systemLibrary(name: "CSQLite"),
         .target(name: "BridgeCore", dependencies: ["CSQLite"]),
-        .executableTarget(name: "BridgeMenuBar", dependencies: ["BridgeCore"]),
-        .testTarget(name: "BridgeCoreTests", dependencies: ["BridgeCore"])
+        .target(name: "BridgeRuntime", dependencies: ["BridgeCore"]),
+        .target(name: "BridgeUI", dependencies: ["BridgeCore", "BridgeRuntime"]),
+        .executableTarget(name: "BridgeMenuBar", dependencies: ["BridgeUI", "BridgeRuntime"]),
+        .testTarget(name: "BridgeCoreTests", dependencies: ["BridgeCore"]),
+        .testTarget(name: "BridgeRuntimeTests", dependencies: ["BridgeRuntime", "BridgeCore"],
+                    resources: [.copy("Fixtures")]),
+        .testTarget(name: "BridgeUITests", dependencies: ["BridgeUI", "BridgeRuntime", "BridgeCore"])
     ],
     swiftLanguageModes: [.v5]
 )

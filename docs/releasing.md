@@ -4,7 +4,7 @@ This public repository doubles as a custom Homebrew tap. It distributes a
 **formula**, not a cask. It does not claim eligibility for `homebrew/core`, whose
 policy excludes app bundles as their main formula product.
 
-1. Merge changes into `main` after CI passes.
+1. Publish any new CLI fork commit first, then update this repository's submodule reference. Merge App changes into `main` after CI passes.
 2. Choose a new semantic version; never overwrite a published tag or asset.
 3. Tag and push:
 
@@ -24,6 +24,9 @@ The release workflow needs only the repository `GITHUB_TOKEN` with contents writ
 permission. If branch protection forbids its formula update, retain protection and
 submit the generated formula through a PR instead; do not bypass user policies.
 Third-party workflow actions are pinned to commit SHAs.
+
+The packager checks that the CLI worktree is clean and matches the recorded
+submodule pin. It does not rewind an initialized submodule as a side effect of a build.
 
 For a local Developer ID build:
 

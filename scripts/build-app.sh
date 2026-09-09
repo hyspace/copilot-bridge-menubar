@@ -7,7 +7,19 @@ BUN="${BUN:-$(command -v bun || true)}"
 BUN="${BUN:-$HOME/.bun/bin/bun}"
 if [[ ! -x "$BUN" ]]; then echo "Build-only dependency missing: Bun. End users do not need Bun." >&2; exit 1; fi
 export BUN
-git submodule update --init --recursive
+if [[ ! -e vendor/copilot-bridge/.git ]]; then
+  git submodule update --init --recursive
+fi
+EXPECTED_REV="$(git ls-files --stage vendor/copilot-bridge | awk '{print $2}')"
+ACTUAL_REV="$(git -C vendor/copilot-bridge rev-parse HEAD)"
+if [[ -z "$EXPECTED_REV" || "$EXPECTED_REV" != "$ACTUAL_REV" ]]; then
+  echo "Submodule HEAD differs from the recorded pin. Stage/commit the intended update; builds never rewind it." >&2
+  exit 1
+fi
+if [[ -n "$(git -C vendor/copilot-bridge status --porcelain)" ]]; then
+  echo "Commit CLI fork changes before packaging. Refusing an unrecorded dirty submodule." >&2
+  exit 1
+fi
 if [[ ! -d vendor/copilot-bridge/node_modules ]]; then
   (cd vendor/copilot-bridge && "$BUN" install --frozen-lockfile)
 fi

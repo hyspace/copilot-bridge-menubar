@@ -5,7 +5,8 @@ root=pathlib.Path(__file__).resolve().parent.parent
 bun=os.environ.get("BUN") or str(pathlib.Path.home()/".bun/bin/bun")
 for mode in ("success","denied"):
     with tempfile.TemporaryDirectory(prefix="cbm-auth-test-") as home:
-        env={"HOME":home,"PATH":"/usr/bin:/bin","CBM_TEST_AUTH":mode,"NO_COLOR":"1"}
+        env={"HOME":home,"PATH":"/usr/bin:/bin","CBM_TEST_AUTH":mode,"NO_COLOR":"1",
+             "COPILOT_BRIDGE_EVENTS_TOKEN":"FAKE_AUTH_CHANNEL"}
         result=subprocess.run([bun,"--preload",str(root/"scripts/mock-auth-preload.ts"),
             "--tsconfig-override",str(root/"tsconfig.json"),str(root/"backend/entry.ts"),"auth"],
             env=env,cwd=root,capture_output=True,text=True,timeout=8)
