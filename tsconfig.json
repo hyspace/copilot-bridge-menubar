@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": ["bun"],
+    "typeRoots": ["./vendor/copilot-bridge/node_modules/@types"],
+    "paths": { "~/*": ["./vendor/copilot-bridge/src/*"] }
+  },
+  "include": ["backend/**/*.ts"]
+}

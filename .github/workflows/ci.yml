@@ -1,0 +1,52 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test-and-package:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: "1.4.1"
+      - name: Verify architecture and install locked build dependencies
+        run: |
+          test "$(uname -m)" = arm64
+          cd vendor/copilot-bridge
+          bun install --frozen-lockfile
+      - name: Typecheck and unit tests
+        run: |
+          bun vendor/copilot-bridge/node_modules/typescript/bin/tsc --noEmit
+          bun test backend
+          (cd vendor/copilot-bridge && bun test)
+          swift test --disable-sandbox
+      - name: Backend and isolated integration tests
+        run: |
+          python3 scripts/build-backend.py
+          python3 scripts/test-auth.py
+          python3 scripts/integration-test.py
+      - name: Build and verify standalone app
+        run: |
+          bash scripts/build-app.sh
+          test "$(build/'Copilot Bridge.app'/Contents/MacOS/CopilotBridgeMenuBar --version)" = 0.1.0
+          test "$(lipo -archs build/'Copilot Bridge.app'/Contents/MacOS/CopilotBridgeMenuBar)" = arm64
+          test "$(lipo -archs build/'Copilot Bridge.app'/Contents/Resources/copilot-bridge-service)" = arm64
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Copilot-Bridge-arm64
+          path: |
+            build/Copilot-Bridge-arm64.zip
+            build/SHA256SUMS
+          retention-days: 7

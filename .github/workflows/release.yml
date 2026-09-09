@@ -1,0 +1,71 @@
+name: Release and Homebrew formula
+on:
+  push:
+    tags: ["v[0-9]*.[0-9]*.[0-9]*"]
+permissions:
+  contents: write
+concurrency:
+  group: release
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: "1.4.1"
+      - name: Validate version and architecture
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          test "$(uname -m)" = arm64
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "VERSION=${TAG#v}" >> "$GITHUB_ENV"
+      - name: Test pinned source and package
+        run: |
+          (cd vendor/copilot-bridge && bun install --frozen-lockfile)
+          bun vendor/copilot-bridge/node_modules/typescript/bin/tsc --noEmit
+          bun test backend
+          (cd vendor/copilot-bridge && bun test)
+          swift test --disable-sandbox
+          python3 scripts/build-backend.py
+          python3 scripts/test-auth.py
+          python3 scripts/integration-test.py
+          bash scripts/build-app.sh
+          test "$(build/'Copilot Bridge.app'/Contents/MacOS/CopilotBridgeMenuBar --version)" = "$VERSION"
+          test "$(lipo -archs build/'Copilot Bridge.app'/Contents/MacOS/CopilotBridgeMenuBar)" = arm64
+      - name: Publish immutable release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" build/Copilot-Bridge-arm64.zip build/SHA256SUMS \
+            --verify-tag --title "Copilot Bridge $TAG" --generate-notes \
+            --notes "Apple Silicon, macOS 14+. Homebrew formula in this repository's tap (not cask). Ad-hoc signed; no Apple notarization is claimed. Existing CLI processes and Codex configuration are never replaced."
+      - name: Update tap formula with the actual release checksum
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHA="$(shasum -a 256 build/Copilot-Bridge-arm64.zip | awk '{print $1}')"
+          git fetch origin main
+          git checkout main
+          git pull --ff-only origin main
+          python3 scripts/update-formula.py --version "$VERSION" --sha256 "$SHA" --repository "$GITHUB_REPOSITORY"
+          ruby -c Formula/copilot-bridge-menubar.rb
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/copilot-bridge-menubar.rb
+          git commit -m "chore(brew): publish $VERSION formula"
+          git push origin main
+      - name: Verify published formula installation
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: |
+          brew tap hyspace/copilot-bridge-menubar "https://github.com/$GITHUB_REPOSITORY"
+          brew install hyspace/copilot-bridge-menubar/copilot-bridge-menubar
+          brew test hyspace/copilot-bridge-menubar/copilot-bridge-menubar

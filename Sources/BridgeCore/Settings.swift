@@ -1,0 +1,142 @@
+import Foundation
+
+public enum NetworkScope: String, Codable, CaseIterable { case local, lan }
+public enum AccountType: String, Codable, CaseIterable { case individual, business, enterprise }
+
+public struct BridgeSettings: Codable, Equatable {
+    public var scope: NetworkScope = .local
+    public var port = 4142
+    public var model = ""
+    public var debug = false
+    public var rateLimitSeconds = 0
+    public var waitForRateLimit = false
+    public var autoMode = false
+    public var accountType: AccountType = .individual
+    public var upstreamURL = ""
+    public var proxyURL = ""
+    public var noProxy = "localhost,127.0.0.1,::1"
+    public var vsCodeVersion = ""
+    public var startOnLaunch = false
+    public var automaticRestart = true
+    public var referenceRequiresOpenAIAuth = true
+    public var referenceReasoningSummaries = true
+    public init() {}
+    public var host: String { scope == .local ? "127.0.0.1" : "0.0.0.0" }
+
+    public func validated() throws -> Self {
+        guard (1024...65535).contains(port) else { throw BridgeError.message("端口必须在 1024–65535 之间。") }
+        guard (0...3600).contains(rateLimitSeconds) else { throw BridgeError.message("请求间隔必须在 0–3600 秒之间。") }
+        guard model.count <= 128 && !model.contains(where: \.isNewline) else {
+            throw BridgeError.message("模型名称过长或包含换行。")
+        }
+        if !upstreamURL.isEmpty {
+            guard let url = URL(string: upstreamURL), url.scheme == "https",
+                  url.host != nil, url.user == nil, url.password == nil,
+                  url.query == nil, url.fragment == nil else {
+                throw BridgeError.message("自定义上游必须是没有凭据、查询或片段的 HTTPS URL。")
+            }
+        }
+        if !proxyURL.isEmpty {
+            guard let url = URL(string: proxyURL), ["http", "https"].contains(url.scheme ?? ""),
+                  url.host != nil, url.user == nil, url.password == nil else {
+                throw BridgeError.message("代理必须使用 HTTP(S) URL；不接受明文保存的代理密码。")
+            }
+        }
+        return self
+    }
+
+    public func arguments(authOnly: Bool = false) -> [String] {
+        if authOnly { return ["auth", "--host", "127.0.0.1", "--port", String(port)] }
+        var args = ["start", "--host", host, "--port", String(port),
+                    "--no-codex-setup", "--no-claude-setup", "--no-prompt"]
+        if !model.isEmpty { args += ["--model", model] }
+        if debug { args += ["--debug"] }
+        if rateLimitSeconds > 0 { args += ["--rate-limit", String(rateLimitSeconds)] }
+        if waitForRateLimit { args += ["--wait"] }
+        if autoMode { args += ["--auto"] }
+        return args
+    }
+
+    public func environment(inheriting source: [String: String], home: String,
+                            parentPID: Int32, instance: String, lanKey: String?) -> [String: String] {
+        // Do not inherit arbitrary runtime loaders, API credentials, or trace destinations.
+        let allowed = ["PATH", "TMPDIR", "LANG", "LC_ALL", "SSL_CERT_FILE", "SSL_CERT_DIR",
+                       "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy"]
+        var env = source.filter { allowed.contains($0.key) }
+        env["HOME"] = home
+        env["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin"
+        env["NO_COLOR"] = "1"
+        env["FORCE_COLOR"] = "0"
+        env["COPILOT_ACCOUNT_TYPE"] = accountType.rawValue
+        env["CBM_PARENT_PID"] = String(parentPID)
+        env["CBM_INSTANCE_ID"] = instance
+        if !upstreamURL.isEmpty { env["COPILOT_BASE_URL"] = upstreamURL }
+        if !proxyURL.isEmpty {
+            env["HTTPS_PROXY"] = proxyURL; env["HTTP_PROXY"] = proxyURL
+            env.removeValue(forKey: "https_proxy"); env.removeValue(forKey: "http_proxy")
+        }
+        env["NO_PROXY"] = noProxy
+        env.removeValue(forKey: "no_proxy")
+        if !vsCodeVersion.isEmpty { env["COPILOT_VSCODE_VERSION"] = vsCodeVersion }
+        if scope == .lan { env["CBM_LAN_KEY"] = lanKey }
+        return env
+    }
+
+    public func referenceConfig(lanKey: String?, hostName: String = "<此 Mac 的局域网地址>") -> String {
+        let address = scope == .local ? "127.0.0.1" : hostName
+        let selectedModel = model.isEmpty ? "<从 Copilot 可用模型中选择>" : model
+        var lines = [
+            "# 参考片段：合并到现有 config.toml，不要覆盖整个文件。",
+            "# 顶层键必须放在所有 [表名] 之前，已有键请修改而非重复添加。",
+            "model_provider = \"bridge\"",
+            "model = \(Self.toml(selectedModel))"
+        ]
+        if referenceReasoningSummaries {
+            lines += ["model_supports_reasoning_summaries = true", "model_reasoning_summary = \"auto\""]
+        }
+        lines += ["", "[model_providers.bridge]", "name = \"Copilot Bridge\"",
+                  "base_url = \(Self.toml("http://\(address):\(port)/v1"))",
+                  "wire_api = \"responses\"", "supports_websockets = false",
+                  "requires_openai_auth = \(referenceRequiresOpenAIAuth)"]
+        if scope == .lan {
+            lines += ["", "# 局域网访问密钥：只交给可信设备；HTTP 不提供传输加密。",
+                      "[model_providers.bridge.http_headers]",
+                      "\"X-Bridge-Key\" = \(Self.toml(lanKey ?? "<访问密钥>"))"]
+        }
+        return lines.joined(separator: "\n") + "\n"
+    }
+
+    private static func toml(_ text: String) -> String {
+        "\"" + text.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\r") + "\""
+    }
+}
+
+public enum BridgeError: LocalizedError {
+    case message(String)
+    public var errorDescription: String? { if case .message(let value) = self { return value }; return nil }
+}
+
+public enum AppPaths {
+    public static var root: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/CopilotBridgeMenuBar", isDirectory: true)
+    }
+    public static func prepare(_ root: URL) throws {
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true,
+                                               attributes: [.posixPermissions: 0o700])
+    }
+    public static func loadSettings(root: URL) throws -> BridgeSettings {
+        let path = root.appendingPathComponent("settings.json")
+        if !FileManager.default.fileExists(atPath: path.path) { return BridgeSettings() }
+        return try JSONDecoder().decode(BridgeSettings.self, from: Data(contentsOf: path)).validated()
+    }
+    public static func saveSettings(_ settings: BridgeSettings, root: URL) throws {
+        _ = try settings.validated(); try prepare(root)
+        let path = root.appendingPathComponent("settings.json")
+        try JSONEncoder().encode(settings).write(to: path, options: [.atomic])
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path.path)
+    }
+}

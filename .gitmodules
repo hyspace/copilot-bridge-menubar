@@ -1,0 +1,3 @@
+[submodule "vendor/copilot-bridge"]
+	path = vendor/copilot-bridge
+	url = https://github.com/hyspace/copilot-bridge.git
