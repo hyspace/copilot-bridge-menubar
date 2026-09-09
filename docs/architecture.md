@@ -7,7 +7,7 @@ NSStatusItem + transient NSPopover (SwiftUI, LSUIElement)
        ├─ bounded nonblocking pipe readers → sanitised rotating logs
        ├─ usage JSONL → daily/model SQLite aggregates
        ├─ loopback health check with per-launch instance identifier
-       └─ loopback /usage → GitHub quota UI
+       └─ loopback /usage → daily account-balance snapshots + quota UI
 
 Compiled Bun backend
   ├─ pinned hyspace/copilot-bridge CLI (Git submodule)
@@ -56,6 +56,9 @@ from a live listener; actual occupied ports remain protected.
 - Rotating logs (about 2 MiB active plus three historical files).
 - SQLite WAL with checkpoints; UTC event timestamps aggregate by local date.
   Hourly maintenance retains two days of dedup IDs and 730 days of daily totals.
+- A 26-week native activity grid joins token totals with the last successful quota
+  observation per day. Credit balances are account-wide snapshots, not costs
+  inferred from token counts; see `activity.md`.
 - SSE observation uses a 256 KiB event cap; JSON observation uses a 4 MiB cap.
   Oversized bodies are still forwarded unchanged but usage may be unavailable.
 - No response clone/tee branch for model streaming. Downstream cancellation

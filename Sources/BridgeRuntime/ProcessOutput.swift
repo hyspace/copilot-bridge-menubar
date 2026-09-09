@@ -33,12 +33,12 @@ final class ProcessOutput {
                 let json = Data(raw.dropFirst(6).utf8)
                 guard let object = (try? JSONSerialization.jsonObject(with: json)) as? [String: Any],
                       !eventToken.isEmpty, object["channel"] as? String == eventToken else {
-                    append("[忽略未验证的诊断事件]")
+                    append("[Ignored an unverified diagnostic event]")
                     continue
                 }
                 if let event = try? JSONDecoder().decode(UsageEvent.self, from: json), event.kind == "usage" {
                     do { try store.record(event) }
-                    catch { append("用量写入失败：\(error.localizedDescription)") }
+                    catch { append("Could not save usage: \(error.localizedDescription)") }
                     continue
                 }
                 do {
@@ -49,12 +49,12 @@ final class ProcessOutput {
                             let seconds = min(max(object["expiresIn"] as? Double ?? 900, 1), 1800)
                             authenticated = false
                             login = LoginPrompt(code: code, expires: Date().addingTimeInterval(seconds))
-                            append("需要 GitHub 设备授权；请在菜单中完成登录。")
+                            append("GitHub device authorization is required. Complete sign-in from the menu.")
                         }
-                    case "authSuccess": authenticated = true; login = nil; append("GitHub 授权成功。")
-                    case "authFailed": failure = "GitHub 授权已过期或被拒绝，请重新登录。"; append(failure!)
+                    case "authSuccess": authenticated = true; login = nil; append("GitHub authorization succeeded.")
+                    case "authFailed": failure = "GitHub authorization expired or was denied. Please sign in again."; append(failure!)
                     case "fatal":
-                        failure = Redactor.clean(object["message"] as? String ?? "后台服务遇到不可恢复的错误。", secrets: secrets)
+                        failure = Redactor.clean(object["message"] as? String ?? "The background service encountered a fatal error.", secrets: secrets)
                         append(failure!)
                     default: break
                     }
@@ -64,14 +64,14 @@ final class ProcessOutput {
             // Device codes belong only in the transient login UI, not persistent diagnostics.
             if raw.contains("https://github.com/login/device") && raw.contains("enter code") { continue }
             if raw.localizedCaseInsensitiveContains("GitHub token:")
-                || raw.localizedCaseInsensitiveContains("Copilot token:") { append("[凭据日志已隐藏]"); continue }
+                || raw.localizedCaseInsensitiveContains("Copilot token:") { append("[Credential log hidden]"); continue }
             append(Redactor.clean(raw, secrets: secrets))
         }
     }
     private func append(_ text: String) {
         lines.append(text)
         if lines.count > 200 { lines.removeFirst(lines.count - 200) }
-        do { try log.append(text) } catch { failure = "日志写入失败：\(error.localizedDescription)" }
+        do { try log.append(text) } catch { failure = "Could not write logs: \(error.localizedDescription)" }
     }
     func snapshot() -> (lines: [String], login: LoginPrompt?, authenticated: Bool, failure: String?) {
         lock.lock(); defer { lock.unlock() }

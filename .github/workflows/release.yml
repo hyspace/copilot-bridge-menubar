@@ -33,6 +33,7 @@ jobs:
           bun test backend
           (cd vendor/copilot-bridge && bun test)
           python3 scripts/test-cask.py
+          python3 scripts/test-english.py
           swift test --disable-sandbox
           python3 scripts/build-backend.py
           python3 scripts/test-auth.py

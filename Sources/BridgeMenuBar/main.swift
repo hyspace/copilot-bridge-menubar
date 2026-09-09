@@ -26,7 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = item
         item.button?.image = NSImage(systemSymbolName: "point.3.connected.trianglepath.dotted", accessibilityDescription: "Copilot Bridge")
         item.button?.target = self; item.button?.action = #selector(togglePopover)
-        item.button?.toolTip = "Copilot Bridge — 已停止"
+        item.button?.toolTip = "Copilot Bridge — Stopped"
         popover.behavior = .transient
         popover.contentSize = NSSize(width: PanelLayout.width, height: PanelLayout.height)
         popover.contentViewController = NSHostingController(rootView: MenuView(controller: model))

@@ -1,24 +1,25 @@
-# CLI 参数覆盖
+# CLI options
 
-| CLI 选项 | App 中的对应 |
+| CLI option | App behavior |
 | --- | --- |
-| `start --host` | 仅本机 / 局域网 |
-| `start --port` | 1024–65535 端口字段 |
-| `--model` | 模型覆盖；空值省略参数，保留客户端选模 |
-| `--debug` | 调试日志开关 |
-| `--rate-limit` | 请求间隔；0 表示不设置 |
-| `--wait` | 达到间隔限制时等待 |
-| `--auto` | Auto 模式开关 |
-| `--codex-setup` | 固定禁用：符合“不自动替换 Codex 配置”的产品约束 |
-| `--claude-setup` | 固定禁用：当前只面向 Codex |
-| `--prompt` | 固定禁用：无交互式终端；由 App 或 Codex 的模型设置替代 |
-| `--show-token` | 不启用：它会把真实 token 输出到日志，不适合常驻 App |
-| `auth` | GitHub 登录 / 重新授权按钮 |
-| `auth --host/--port` | 使用当前端口及 loopback 配置初始化，不开额外认证监听端口 |
-| `auth --show-token` | 同样不启用 |
+| `start --host` | Local only / LAN |
+| `start --port` | Port field, 1024–65535 |
+| `--model` | Model override; leave blank to preserve the client's model choice |
+| `--debug` | Debug logging |
+| `--rate-limit` | Request interval; zero omits this option |
+| `--wait` | Wait when rate-limited |
+| `--auto` | Auto mode |
+| `--codex-setup` | Disabled; the app never rewrites Codex configuration |
+| `--claude-setup` | Disabled; the app never rewrites Claude configuration |
+| `--prompt` | Disabled; choose a model in Settings or your client instead |
+| `--show-token` | Disabled; credentials must not be printed into service logs |
+| `auth` | Sign in / authorize with GitHub |
+| `auth --host/--port` | Uses loopback and the configured port for CLI initialization; no additional authorization listener |
+| `auth --show-token` | Disabled |
 
-环境选项：
-`COPILOT_ACCOUNT_TYPE`、可选的 `COPILOT_BASE_URL`、`COPILOT_VSCODE_VERSION`、
-HTTP(S) 代理和 `NO_PROXY` 有对应设置。
-`COPILOT_TOKEN`、运行时 loader 环境和原始请求 trace 目标被有意清除。
-这不是任意 shell 命令执行器，也不允许注入额外任意 CLI 参数。
+Settings also cover `COPILOT_ACCOUNT_TYPE`, an optional `COPILOT_BASE_URL`,
+`COPILOT_VSCODE_VERSION`, HTTP(S) proxies and `NO_PROXY`.
+Inherited `COPILOT_TOKEN`, runtime loaders and raw-request trace destinations
+are intentionally cleared.
+
+The app is not a shell-command runner and does not accept arbitrary extra CLI arguments.

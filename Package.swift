@@ -11,10 +11,10 @@ let package = Package(
         .target(name: "BridgeRuntime", dependencies: ["BridgeCore"]),
         .target(name: "BridgeUI", dependencies: ["BridgeCore", "BridgeRuntime"]),
         .executableTarget(name: "BridgeMenuBar", dependencies: ["BridgeUI", "BridgeRuntime"]),
-        .testTarget(name: "BridgeCoreTests", dependencies: ["BridgeCore"]),
+        .testTarget(name: "BridgeCoreTests", dependencies: ["BridgeCore", "CSQLite"]),
         .testTarget(name: "BridgeRuntimeTests", dependencies: ["BridgeRuntime", "BridgeCore"],
                     resources: [.copy("Fixtures")]),
-        .testTarget(name: "BridgeUITests", dependencies: ["BridgeUI", "BridgeRuntime", "BridgeCore"])
+        .testTarget(name: "BridgeUITests", dependencies: ["BridgeUI", "BridgeRuntime", "BridgeCore", "CSQLite"])
     ],
     swiftLanguageModes: [.v5]
 )

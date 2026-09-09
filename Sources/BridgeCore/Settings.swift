@@ -24,22 +24,22 @@ public struct BridgeSettings: Codable, Equatable {
     public var host: String { scope == .local ? "127.0.0.1" : "0.0.0.0" }
 
     public func validated() throws -> Self {
-        guard (1024...65535).contains(port) else { throw BridgeError.message("端口必须在 1024–65535 之间。") }
-        guard (0...3600).contains(rateLimitSeconds) else { throw BridgeError.message("请求间隔必须在 0–3600 秒之间。") }
+        guard (1024...65535).contains(port) else { throw BridgeError.message("Port must be between 1024 and 65535.") }
+        guard (0...3600).contains(rateLimitSeconds) else { throw BridgeError.message("Request interval must be between 0 and 3600 seconds.") }
         guard model.count <= 128 && !model.contains(where: \.isNewline) else {
-            throw BridgeError.message("模型名称过长或包含换行。")
+            throw BridgeError.message("The model name is too long or contains a line break.")
         }
         if !upstreamURL.isEmpty {
             guard let url = URL(string: upstreamURL), url.scheme == "https",
                   url.host != nil, url.user == nil, url.password == nil,
                   url.query == nil, url.fragment == nil else {
-                throw BridgeError.message("自定义上游必须是没有凭据、查询或片段的 HTTPS URL。")
+                throw BridgeError.message("The upstream must be an HTTPS URL without credentials, a query or a fragment.")
             }
         }
         if !proxyURL.isEmpty {
             guard let url = URL(string: proxyURL), ["http", "https"].contains(url.scheme ?? ""),
                   url.host != nil, url.user == nil, url.password == nil else {
-                throw BridgeError.message("代理必须使用 HTTP(S) URL；不接受明文保存的代理密码。")
+                throw BridgeError.message("Use an HTTP(S) proxy URL without embedded credentials.")
             }
         }
         return self
@@ -83,12 +83,12 @@ public struct BridgeSettings: Codable, Equatable {
         return env
     }
 
-    public func referenceConfig(hostName: String = "<此 Mac 的局域网地址>") -> String {
+    public func referenceConfig(hostName: String = "<this-mac-lan-address>") -> String {
         let address = scope == .local ? "127.0.0.1" : hostName
-        let selectedModel = model.isEmpty ? "<从 Copilot 可用模型中选择>" : model
+        let selectedModel = model.isEmpty ? "<choose-an-available-copilot-model>" : model
         var lines = [
-            "# 参考片段：合并到现有 config.toml，不要覆盖整个文件。",
-            "# 顶层键必须放在所有 [表名] 之前，已有键请修改而非重复添加。",
+            "# Reference only: merge into your existing config.toml; do not replace the file.",
+            "# Place top-level keys before all [tables]. Update existing keys instead of duplicating them.",
             "model_provider = \"bridge\"",
             "model = \(Self.toml(selectedModel))"
         ]
@@ -100,7 +100,7 @@ public struct BridgeSettings: Codable, Equatable {
                   "wire_api = \"responses\"", "supports_websockets = false",
                   "requires_openai_auth = \(referenceRequiresOpenAIAuth)"]
         if scope == .lan {
-            lines += ["", "# 局域网访问无需密钥。仅限可信网络，不要暴露到公网。"]
+            lines += ["", "# LAN access requires no key. Use trusted networks only; never expose this to the public internet."]
         }
         return lines.joined(separator: "\n") + "\n"
     }

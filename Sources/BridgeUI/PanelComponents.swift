@@ -2,7 +2,7 @@ import SwiftUI
 
 public enum PanelLayout {
     public static let width: CGFloat = 384
-    public static let height: CGFloat = 500
+    public static let height: CGFloat = 600
     static let inset: CGFloat = 16
 }
 

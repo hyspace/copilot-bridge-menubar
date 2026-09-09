@@ -56,6 +56,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path == "/healthz":
             body = {"ok":True,"instance":os.environ["COPILOT_BRIDGE_INSTANCE_ID"]}
         elif self.path == "/usage":
+            if (home/"quota-error").exists():
+                self.send_error(503)
+                return
             body = {"token_based_billing":True,"quota_snapshots":{"premium_interactions":{
                 "quota_remaining":75.5,"entitlement":100,"credits_used":24,
                 "percent_remaining":75.5,"unlimited":False}}}

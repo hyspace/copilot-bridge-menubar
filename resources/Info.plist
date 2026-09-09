@@ -11,7 +11,9 @@
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
-  <key>NSLocalNetworkUsageDescription</key><string>检查本机桥接服务健康状态，并在你选择局域网模式时为可信设备提供模型服务。</string>
+  <key>CFBundleDevelopmentRegion</key><string>en</string>
+  <key>CFBundleLocalizations</key><array><string>en</string></array>
+  <key>NSLocalNetworkUsageDescription</key><string>Check the local bridge service and serve trusted devices when you enable LAN access.</string>
   <key>NSAppTransportSecurity</key><dict>
     <key>NSAllowsLocalNetworking</key><true/>
     <key>NSExceptionDomains</key><dict><key>127.0.0.1</key><dict>

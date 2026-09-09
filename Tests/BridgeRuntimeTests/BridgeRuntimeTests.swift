@@ -101,9 +101,30 @@ final class BridgeRuntimeTests: XCTestCase {
         controller.start()
         XCTAssertEqual(controller.state, .failed)
         XCTAssertNil(controller.servicePID)
-        XCTAssertTrue(controller.message.contains("不会接管"))
+        XCTAssertTrue(controller.message.contains("will not be stopped or taken over"))
         XCTAssertFalse(FileManager.default.fileExists(atPath: home.appendingPathComponent("launches").path))
         XCTAssertNotEqual(fcntl(occupied.fd, F_GETFD), -1)
+    }
+
+    func testQuotaFailureKeepsOriginalTimestampAndPersistedSnapshot() async throws {
+        let (controller, home) = try fixture("normal")
+        controller.start()
+        try await eventually("initial quota snapshot was not stored") {
+            controller.quotaDate != nil && !controller.isFetchingQuota
+                && controller.activity.contains { $0.quota?.snapshot.remaining == 75.5 }
+        }
+        let originalDate = controller.quotaDate
+        try Data().write(to: home.appendingPathComponent("quota-error"))
+        controller.refreshQuota()
+        try await eventually("quota failure was not reported") {
+            !controller.isFetchingQuota && !controller.quotaError.isEmpty
+        }
+        XCTAssertEqual(controller.quotaDate, originalDate)
+        XCTAssertEqual(controller.quota?.remaining, 75.5)
+        let store = try UsageStore(url: home.appendingPathComponent("data/usage.sqlite"))
+        XCTAssertEqual(try XCTUnwrap(store.latestQuota()).observedAt.timeIntervalSince1970,
+                       try XCTUnwrap(originalDate).timeIntervalSince1970, accuracy: 0.000001)
+        XCTAssertEqual(try store.latestQuota()?.snapshot.remaining, 75.5)
     }
 
     func testStubbornOwnedChildGetsBoundedShutdown() async throws {
@@ -143,9 +164,9 @@ final class BridgeRuntimeTests: XCTestCase {
         controller.signIn()
         try await eventually("device prompt was not delivered") { controller.login?.code == "ABCD-1234" }
         try await eventually("auth process did not exit") { !controller.isActive }
-        XCTAssertTrue(controller.message.contains("授权成功"), controller.message)
+        XCTAssertTrue(controller.message.contains("authorization succeeded"), controller.message)
         XCTAssertNil(controller.login)
-        XCTAssertTrue(controller.logs.contains(where: { $0.contains("授权成功") }))
+        XCTAssertTrue(controller.logs.contains(where: { $0.contains("authorization succeeded") }))
     }
 
     func testDeniedAuthStopsWithoutAutomaticRetry() async throws {
@@ -153,7 +174,7 @@ final class BridgeRuntimeTests: XCTestCase {
         controller.settings.automaticRestart = true
         controller.signIn()
         try await eventually("denied auth stayed alive") { !controller.isActive }
-        XCTAssertTrue(controller.message.contains("授权未完成"))
+        XCTAssertTrue(controller.message.contains("Authorization was not completed"))
         XCTAssertEqual(try String(contentsOf: home.appendingPathComponent("launches"), encoding: .utf8), "1")
     }
 
@@ -162,7 +183,7 @@ final class BridgeRuntimeTests: XCTestCase {
         controller.settings.automaticRestart = true
         controller.start()
         try await eventually("crash circuit breaker never opened", timeout: 6) {
-            controller.state == .failed && controller.message.contains("停止自动重启")
+            controller.state == .failed && controller.message.contains("Automatic restarts stopped")
         }
         XCTAssertEqual(try String(contentsOf: home.appendingPathComponent("launches"), encoding: .utf8), "6")
         XCTAssertFalse(controller.isActive)
@@ -183,14 +204,14 @@ final class BridgeRuntimeTests: XCTestCase {
         let (controller, _) = try fixture("never-ready", startupTimeout: 0.15)
         controller.start()
         try await eventually("startup deadline did not clean up") { !controller.isActive }
-        XCTAssertTrue(controller.message.contains("启动超过"), controller.message)
+        XCTAssertTrue(controller.message.contains("startup exceeded"), controller.message)
     }
 
     func testAuthInitializationHasADeadlineBeforeAnyDeviceCodeArrives() async throws {
         let (controller, _) = try fixture("auth-no-response", startupTimeout: 0.15)
         controller.signIn()
         try await eventually("auth initialization hung without a deadline") { !controller.isActive }
-        XCTAssertTrue(controller.message.contains("授权信息或初始化超时"), controller.message)
+        XCTAssertTrue(controller.message.contains("Authorization initialization timed out"), controller.message)
         XCTAssertNil(controller.login)
     }
 

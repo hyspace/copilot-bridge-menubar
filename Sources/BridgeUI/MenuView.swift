@@ -5,7 +5,6 @@ import BridgeRuntime
 public struct MenuView: View {
     @ObservedObject var controller: BridgeController
     @State private var tab = 0
-    @State private var allTime = false
     @State private var advanced = false
     @State private var codexOptions = false
 
@@ -38,6 +37,7 @@ public struct MenuView: View {
             footer
         }
         .frame(width: PanelLayout.width, height: PanelLayout.height)
+        .environment(\.locale, Locale(identifier: "en_US"))
     }
 
     private var header: some View {
@@ -49,7 +49,7 @@ public struct MenuView: View {
                 .background(RoundedRectangle(cornerRadius: 7).fill(Color.accentColor.opacity(0.08)))
             VStack(alignment: .leading, spacing: 2) {
                 Text("Copilot Bridge").font(.system(size: 13, weight: .semibold))
-                Text("本地模型服务").font(.system(size: 10)).foregroundStyle(.secondary)
+                Text("Local model service").font(.system(size: 10)).foregroundStyle(.secondary)
             }
             Spacer()
             HStack(spacing: 5) {
@@ -70,7 +70,7 @@ public struct MenuView: View {
     }
     private var tabs: some View {
         HStack(spacing: 2) {
-            ForEach(Array(["概览", "设置", "日志"].enumerated()), id: \.offset) { index, title in
+            ForEach(Array(["Overview", "Settings", "Logs"].enumerated()), id: \.offset) { index, title in
                 Button { tab = index } label: {
                     Text(title).font(.system(size: 11, weight: tab == index ? .semibold : .regular))
                         .frame(maxWidth: .infinity).frame(height: 24)
@@ -82,7 +82,7 @@ public struct MenuView: View {
     }
 
     private var overview: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Text(controller.endpoint).font(.system(size: 10, design: .monospaced)).textSelection(.enabled)
@@ -95,176 +95,153 @@ public struct MenuView: View {
                     Button {
                         controller.isActive ? controller.stop() : controller.start()
                     } label: {
-                        Label(controller.isActive ? "停止服务" : "启动服务", systemImage: controller.isActive ? "stop.fill" : "play.fill")
+                        Label(controller.isActive ? "Stop service" : "Start service", systemImage: controller.isActive ? "stop.fill" : "play.fill")
                             .frame(maxWidth: .infinity)
                     }.buttonStyle(PanelButtonStyle(accent: !controller.isActive))
                         .disabled(controller.state == .stopping)
                     if controller.isActive {
                         Button { controller.stop(restart: true) } label: { Image(systemName: "arrow.clockwise") }
-                            .buttonStyle(PanelButtonStyle()).help("重启此 App 管理的服务")
+                            .buttonStyle(PanelButtonStyle()).help("Restart only this app’s service")
                             .disabled(controller.state == .stopping)
                     }
-                    Button { controller.copyReference() } label: { Label("Codex 配置", systemImage: "doc.on.doc") }
-                        .buttonStyle(PanelButtonStyle()).help("复制参考配置，不改写文件")
+                    Button { controller.copyReference() } label: { Label("Codex config", systemImage: "doc.on.doc") }
+                        .buttonStyle(PanelButtonStyle()).help("Copy a reference configuration without changing files")
                 }
-                if controller.hasUnsavedChanges { InlineNote(text: "设置已修改，保存并重启后生效。", warning: true) }
-            }
-            Divider()
-            VStack(alignment: .leading, spacing: 12) {
-                SectionHeading("Token 用量") {
-                    HStack(spacing: 2) {
-                        periodButton("今日", selected: !allTime) { allTime = false }
-                        periodButton("累计", selected: allTime) { allTime = true }
-                    }.padding(2).background(RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.035)))
-                }
-                let usage = allTime ? controller.total : controller.today
-                HStack(spacing: 0) {
-                    metric("输入", usage.input)
-                    metric("输出", usage.output)
-                    metric("已报告缓存", usage.cached)
-                }
-                HStack(spacing: 5) {
-                    Text("\(usage.requests) 次请求  ·  \(usage.errors) 次错误  ·  \(usage.unknown) 次无用量数据")
-                    Spacer(minLength: 0)
-                    Image(systemName: "info.circle").help("只统计本 App 的上游请求。缓存包含在输入内；缺少 usage 不会伪装成已测量的零。累计保留 730 天。")
-                }.font(.system(size: 9)).foregroundStyle(.secondary)
+                if controller.hasUnsavedChanges { InlineNote(text: "Settings changed. Save and restart to apply.", warning: true) }
             }
             Divider()
             quota
             Divider()
-            HStack(spacing: 9) {
-                Image(systemName: "person.crop.circle").font(.system(size: 19)).foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("GitHub 授权").font(.system(size: 11, weight: .medium))
-                    Text("凭据由 Bridge CLI 管理").font(.system(size: 9)).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button("登录 / 授权") { controller.signIn() }
-                    .buttonStyle(PanelButtonStyle()).disabled(controller.isActive)
-                    .help(controller.isActive ? "先停止服务，再重新授权" : controller.loginStatus)
-            }
+            ActivityHeatmap(days: controller.activity)
         }
     }
 
     private var quota: some View {
         VStack(alignment: .leading, spacing: 10) {
             SectionHeading(controller.quota?.title ?? "GitHub credits") {
+                Button("Sign in") { controller.signIn() }
+                    .buttonStyle(.plain).font(.system(size: 10, weight: .medium))
+                    .disabled(controller.isActive)
+                    .help(controller.isActive ? "Stop the service before signing in again" : controller.loginStatus)
                 Button { controller.refreshQuota() } label: {
                     Image(systemName: "arrow.clockwise").font(.system(size: 10))
                         .frame(width: 22, height: 20)
                 }.buttonStyle(.plain).foregroundStyle(.secondary)
                     .disabled(controller.isFetchingQuota || controller.state != .running)
-                    .help(controller.isFetchingQuota ? "查询中" : "刷新 GitHub 剩余额度")
+                    .help(controller.isFetchingQuota ? "Refreshing" : "Refresh the GitHub account balance")
             }
             if let value = controller.quota {
                 HStack(alignment: .firstTextBaseline) {
-                    Text(value.unlimited ? "不限" : value.remaining.map { $0.formatted(.number.precision(.fractionLength(0...2))) } ?? "—")
+                    Text(value.unlimited ? "Unlimited" : value.remaining.map { ActivityText.number($0) } ?? "—")
                         .font(.system(size: 22, weight: .semibold, design: .rounded)).monospacedDigit()
-                    Text("剩余").font(.system(size: 10)).foregroundStyle(.secondary)
+                    Text("remaining").font(.system(size: 10)).foregroundStyle(.secondary)
                     Spacer()
                     if let percent = value.percentRemaining, !value.unlimited {
-                        Text(percent.formatted(.number.precision(.fractionLength(0...1))) + "%")
+                        Text(percent.formatted(.number.locale(ActivityText.locale).precision(.fractionLength(0...1))) + "%")
                             .font(.system(size: 11, weight: .medium)).monospacedDigit().foregroundStyle(.secondary)
                     }
                 }
                 if let percent = value.percentRemaining, !value.unlimited {
-                    ProgressView(value: min(max(percent, 0), 100), total: 100).controlSize(.small)
+                    ProgressView(value: min(max(percent, 0), 100), total: 100).controlSize(.small).tint(.green)
                 }
                 HStack {
-                    Text(value.entitlement.map { "总额 " + $0.formatted() } ?? "总额未知")
+                    Text(value.entitlement.map { "Limit " + ActivityText.number($0) } ?? "Limit unknown")
                     Spacer()
-                    if let date = controller.quotaDate { Text("更新于 " + date.formatted(date: .omitted, time: .shortened)) }
+                    if let date = controller.quotaDate {
+                        Text("As of " + (Calendar.current.isDateInToday(date)
+                            ? ActivityText.time(date) : ActivityText.date(date) + " " + ActivityText.time(date)))
+                    }
                 }.font(.system(size: 9)).foregroundStyle(.secondary)
                 if let reset = value.reset {
-                    Text("重置：" + reset).font(.system(size: 9)).foregroundStyle(.tertiary).lineLimit(1).help(reset)
+                    Text("Resets: " + reset).font(.system(size: 9)).foregroundStyle(.tertiary).lineLimit(1).help(reset)
                 }
             } else {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Text("—").font(.system(size: 22, weight: .medium, design: .rounded)).foregroundStyle(.tertiary)
-                    Text("启动服务后读取剩余额度").font(.system(size: 10)).foregroundStyle(.secondary)
+                    Text("Start the service to check your balance").font(.system(size: 10)).foregroundStyle(.secondary)
                 }
             }
             if !controller.quotaError.isEmpty { InlineNote(text: controller.quotaError, warning: true) }
-        }.help("按 GitHub API 的原始单位显示，不换算成美元。")
+        }.help("GitHub account-wide quota in its original units; no dollar conversion.")
     }
 
     private var preferences: some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 8) {
-                SectionHeading("连接") { EmptyView() }
+                SectionHeading("Connection") { EmptyView() }
                 HStack {
-                    Text("访问范围").font(.system(size: 11))
+                    Text("Access").font(.system(size: 11))
                     Spacer()
-                    Picker("访问范围", selection: $controller.settings.scope) {
-                        Text("仅本机").tag(NetworkScope.local)
-                        Text("局域网").tag(NetworkScope.lan)
+                    Picker("Access", selection: $controller.settings.scope) {
+                        Text("Local only").tag(NetworkScope.local)
+                        Text("LAN").tag(NetworkScope.lan)
                     }.labelsHidden().pickerStyle(.segmented).controlSize(.small).frame(width: 154)
                 }.frame(height: 28)
-                numericRow("端口", value: $controller.settings.port)
-                if controller.settings.scope == .lan { InlineNote(text: "内网访问无需密钥；仅用于可信网络，不要暴露到公网。", warning: true) }
+                numericRow("Port", value: $controller.settings.port)
+                if controller.settings.scope == .lan { InlineNote(text: "LAN access has no key. Use trusted networks only; never expose it to the internet.", warning: true) }
             }
             Divider()
             VStack(alignment: .leading, spacing: 8) {
-                SectionHeading("模型与请求") { EmptyView() }
-                TextSetting(title: "模型覆盖", placeholder: "留空，跟随 Codex 选择", value: $controller.settings.model)
-                SettingToggle(title: "Auto 模式", value: $controller.settings.autoMode,
-                              hint: "仅支持 Copilot Auto 会话可用的模型")
-                numericRow("请求间隔", value: $controller.settings.rateLimitSeconds, suffix: "秒")
-                    .help("0 为不限制；对应 --rate-limit")
-                SettingToggle(title: "限流时等待", value: $controller.settings.waitForRateLimit,
-                              hint: "等待间隔结束，而不是立即返回 429")
+                SectionHeading("Model & requests") { EmptyView() }
+                TextSetting(title: "Model override", placeholder: "Leave blank to use the client’s model", value: $controller.settings.model)
+                SettingToggle(title: "Auto mode", value: $controller.settings.autoMode,
+                              hint: "Only models available in Copilot Auto sessions are supported")
+                numericRow("Request interval", value: $controller.settings.rateLimitSeconds, suffix: "s")
+                    .help("0 means no interval limit; maps to --rate-limit")
+                SettingToggle(title: "Wait when rate-limited", value: $controller.settings.waitForRateLimit,
+                              hint: "Wait for the interval instead of returning HTTP 429")
                     .disabled(controller.settings.rateLimitSeconds == 0)
             }
             Divider()
             VStack(alignment: .leading, spacing: 2) {
-                SectionHeading("启动与恢复") { EmptyView() }
-                SettingToggle(title: "打开 App 时启动服务", value: $controller.settings.startOnLaunch)
-                SettingToggle(title: "异常退出后自动重试", value: $controller.settings.automaticRestart,
-                              hint: "指数退避；10 分钟最多重试 5 次")
-                SettingToggle(title: "登录 macOS 时打开", value: Binding(
+                SectionHeading("Startup & recovery") { EmptyView() }
+                SettingToggle(title: "Start service when app opens", value: $controller.settings.startOnLaunch)
+                SettingToggle(title: "Retry after an unexpected exit", value: $controller.settings.automaticRestart,
+                              hint: "Exponential backoff; up to 5 retries in 10 minutes")
+                SettingToggle(title: "Open at login", value: Binding(
                     get: { controller.loginItemEnabled }, set: { controller.setLoginItem($0) }))
             }
             Divider()
             DisclosureGroup(isExpanded: $advanced) {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
-                        Text("账号类型").font(.system(size: 11)); Spacer()
-                        Picker("账号类型", selection: $controller.settings.accountType) {
+                        Text("Account type").font(.system(size: 11)); Spacer()
+                        Picker("Account type", selection: $controller.settings.accountType) {
                             ForEach(AccountType.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                         }.labelsHidden().controlSize(.small).frame(width: 148)
                     }
-                    TextSetting(title: "HTTP(S) 代理", placeholder: "可选，例如 http://127.0.0.1:7890", value: $controller.settings.proxyURL)
-                    TextSetting(title: "不走代理的地址", placeholder: "NO_PROXY", value: $controller.settings.noProxy)
-                    TextSetting(title: "自定义 HTTPS 上游", placeholder: "留空使用 Copilot 默认地址", value: $controller.settings.upstreamURL)
-                    TextSetting(title: "VS Code 兼容版本", placeholder: "使用 CLI 默认版本", value: $controller.settings.vsCodeVersion)
-                    SettingToggle(title: "调试日志", value: $controller.settings.debug)
-                    InlineNote(text: "默认清除预设 Copilot token 与上游地址；不读取 shell 配置，不输出明文 token。")
+                    TextSetting(title: "HTTP(S) proxy", placeholder: "Optional, e.g. http://127.0.0.1:7890", value: $controller.settings.proxyURL)
+                    TextSetting(title: "Proxy exclusions", placeholder: "NO_PROXY", value: $controller.settings.noProxy)
+                    TextSetting(title: "Custom HTTPS upstream", placeholder: "Leave blank to use the default Copilot endpoint", value: $controller.settings.upstreamURL)
+                    TextSetting(title: "VS Code compatibility version", placeholder: "Use the CLI default", value: $controller.settings.vsCodeVersion)
+                    SettingToggle(title: "Debug logging", value: $controller.settings.debug)
+                    InlineNote(text: "Inherited Copilot tokens and upstream overrides are cleared. No shell configuration is loaded and no credentials are printed.")
                 }.padding(.top, 10)
-            } label: { Text("高级选项").font(.system(size: 11, weight: .medium)) }
+            } label: { Text("Advanced").font(.system(size: 11, weight: .medium)) }
             DisclosureGroup(isExpanded: $codexOptions) {
                 VStack(alignment: .leading, spacing: 3) {
-                    SettingToggle(title: "保留 OpenAI 登录认证", value: $controller.settings.referenceRequiresOpenAIAuth)
-                    SettingToggle(title: "请求推理摘要", value: $controller.settings.referenceReasoningSummaries)
-                    Button("复制参考配置") { controller.copyReference() }.buttonStyle(PanelButtonStyle())
-                    InlineNote(text: "仅生成参考，不改写 Codex 或 Claude 配置。交互式选模改由 App 或 Codex 完成。")
+                    SettingToggle(title: "Keep OpenAI sign-in", value: $controller.settings.referenceRequiresOpenAIAuth)
+                    SettingToggle(title: "Request reasoning summaries", value: $controller.settings.referenceReasoningSummaries)
+                    Button("Copy reference configuration") { controller.copyReference() }.buttonStyle(PanelButtonStyle())
+                    InlineNote(text: "Reference only. Codex and Claude files are not changed. Choose a model in this app or your client.")
                         .padding(.top, 6)
                 }.padding(.top, 8)
-            } label: { Text("Codex 参考配置").font(.system(size: 11, weight: .medium)) }
+            } label: { Text("Codex reference configuration").font(.system(size: 11, weight: .medium)) }
         }
     }
 
     private var diagnostics: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionHeading("运行日志") {
-                Button("打开目录") { controller.openLogs() }.buttonStyle(PanelButtonStyle())
+            SectionHeading("Service logs") {
+                Button("Open folder") { controller.openLogs() }.buttonStyle(PanelButtonStyle())
             }
-            HStack { Text("最近 200 行"); Spacer(); Text("2 MB × 4 份") }
+            HStack { Text("Latest 200 lines"); Spacer(); Text("4 files × 2 MB") }
                 .font(.system(size: 9)).foregroundStyle(.secondary)
             if controller.logs.isEmpty {
                 VStack(spacing: 9) {
                     Image(systemName: "text.alignleft").font(.system(size: 22)).foregroundStyle(.tertiary)
-                    Text("还没有运行日志").font(.system(size: 11)).foregroundStyle(.secondary)
-                    Text("启动服务后，诊断信息会显示在这里。")
+                    Text("No logs yet").font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text("Diagnostics appear here after you start the service.")
                         .font(.system(size: 10)).foregroundStyle(.tertiary)
                 }.frame(maxWidth: .infinity).padding(.vertical, 42)
             } else {
@@ -272,44 +249,30 @@ public struct MenuView: View {
                     .font(.system(size: 10, design: .monospaced)).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            InlineNote(text: "凭据会脱敏，不保存对话正文；分享调试日志前仍请检查。")
+            InlineNote(text: "Credentials are redacted and conversation content is not stored. Review debug logs before sharing.")
         }
     }
 
     private var footer: some View {
         HStack(spacing: 8) {
             if tab == 1 {
-                Button("保存") { _ = controller.save() }.buttonStyle(PanelButtonStyle(accent: true))
+                Button("Save") { _ = controller.save() }.buttonStyle(PanelButtonStyle(accent: true))
                 if controller.isActive {
-                    Button("保存并重启") { if controller.save() { controller.stop(restart: true) } }
+                    Button("Save & restart") { if controller.save() { controller.stop(restart: true) } }
                         .buttonStyle(PanelButtonStyle()).disabled(controller.state == .stopping)
                 }
             } else {
                 Text(Bundle.main.bundleIdentifier == "com.hyspace.copilot-bridge-menubar"
-                     ? "v" + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev") : "开发预览")
+                     ? "v" + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev") : "Development preview")
                     .font(.system(size: 9)).foregroundStyle(.tertiary)
             }
             Spacer()
             Button { controller.quit() } label: {
-                Label("退出", systemImage: "power").font(.system(size: 10))
-            }.buttonStyle(.plain).foregroundStyle(.secondary).help("退出 App 并停止它管理的服务")
+                Label("Quit", systemImage: "power").font(.system(size: 10))
+            }.buttonStyle(.plain).foregroundStyle(.secondary).help("Quit the app and stop only its service")
         }.padding(.horizontal, PanelLayout.inset).frame(height: 40)
     }
 
-    private func periodButton(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title).font(.system(size: 9, weight: selected ? .semibold : .regular))
-                .padding(.horizontal, 8).frame(height: 19)
-                .background(RoundedRectangle(cornerRadius: 4).fill(selected ? Color(nsColor: .controlBackgroundColor) : .clear))
-        }.buttonStyle(.plain)
-    }
-    private func metric(_ title: String, _ value: Int64) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(value.formatted(.number.notation(.compactName)))
-                .font(.system(size: 22, weight: .semibold, design: .rounded)).monospacedDigit()
-            Text(title).font(.system(size: 9)).foregroundStyle(.secondary)
-        }.frame(maxWidth: .infinity, alignment: .leading)
-    }
     private func numericRow(_ title: String, value: Binding<Int>, suffix: String = "") -> some View {
         HStack(spacing: 6) {
             Text(title).font(.system(size: 11)); Spacer()
@@ -323,16 +286,16 @@ public struct MenuView: View {
     }
     private func authorization(_ prompt: LoginPrompt) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionHeading("GitHub 设备授权") {
-                Button("取消") { controller.stop() }.buttonStyle(.plain).font(.system(size: 10)).foregroundStyle(.secondary)
+            SectionHeading("GitHub device authorization") {
+                Button("Cancel") { controller.stop() }.buttonStyle(.plain).font(.system(size: 10)).foregroundStyle(.secondary)
             }
             HStack {
                 Text(prompt.code).font(.system(size: 22, weight: .semibold, design: .monospaced)).textSelection(.enabled)
                 Spacer()
                 Button { controller.copyDeviceCode() } label: { Image(systemName: "doc.on.doc") }.buttonStyle(PanelButtonStyle())
             }
-            Button("打开 GitHub 授权页") { controller.openLogin() }.buttonStyle(PanelButtonStyle(accent: true))
-            Text("有效至 " + prompt.expires.formatted(date: .omitted, time: .shortened))
+            Button("Open GitHub sign-in") { controller.openLogin() }.buttonStyle(PanelButtonStyle(accent: true))
+            Text("Expires at " + ActivityText.time(prompt.expires))
                 .font(.system(size: 9)).foregroundStyle(.secondary)
         }.padding(12)
             .background(RoundedRectangle(cornerRadius: 8).fill(Color.accentColor.opacity(0.055)))
