@@ -28,7 +28,7 @@ final class BridgeCoreTests: XCTestCase {
         let source = ["COPILOT_TOKEN":"secret", "COPILOT_BASE_URL":"https://wrong.test", "BUN_OPTIONS":"evil",
                       "NODE_OPTIONS":"evil", "COPILOT_BRIDGE_TRACE_REQUESTS_FILE":"/tmp/prompt",
                       "HTTPS_PROXY":"http://127.0.0.1:7890"]
-        let env = BridgeSettings().environment(inheriting: source, home: "/tmp/test", parentPID: 123, instance: "one", lanKey: nil)
+        let env = BridgeSettings().environment(inheriting: source, home: "/tmp/test", parentPID: 123, instance: "one")
         for key in ["COPILOT_TOKEN","COPILOT_BASE_URL","BUN_OPTIONS","NODE_OPTIONS","COPILOT_BRIDGE_TRACE_REQUESTS_FILE"] { XCTAssertNil(env[key]) }
         XCTAssertEqual(env["HTTPS_PROXY"],source["HTTPS_PROXY"])
         XCTAssertEqual(env["HOME"],"/tmp/test"); XCTAssertEqual(env["CBM_PARENT_PID"],"123")
@@ -44,14 +44,17 @@ final class BridgeCoreTests: XCTestCase {
     }
     func testReferenceKeepsOpenAIAuthAndUsesRecognizedWebsocketSetting() {
         var settings = BridgeSettings(); settings.model = "gpt-6-astra"
-        let text = settings.referenceConfig(lanKey: nil)
+        let text = settings.referenceConfig()
         XCTAssertTrue(text.contains("requires_openai_auth = true"))
         XCTAssertTrue(text.contains("supports_websockets = false"))
         XCTAssertFalse(text.contains("prefer_websockets"))
         XCTAssertFalse(text.contains("X-Bridge-Key"))
         settings.scope = .lan
-        XCTAssertTrue(settings.referenceConfig(lanKey: "test", hostName: "mac.local").contains("\"X-Bridge-Key\" = \"test\""))
-        XCTAssertTrue(settings.referenceConfig(lanKey: "test", hostName: "mac.local").contains("http://mac.local:4142/v1"))
+        XCTAssertFalse(settings.referenceConfig(hostName: "mac.local").contains("X-Bridge-Key"))
+        XCTAssertTrue(settings.referenceConfig(hostName: "mac.local").contains("http://mac.local:4142/v1"))
+        let environment = settings.environment(inheriting: ["COPILOT_BRIDGE_ACCESS_KEY":"old"],
+            home:"/tmp/test",parentPID:123,instance:"one")
+        XCTAssertNil(environment["COPILOT_BRIDGE_ACCESS_KEY"])
     }
     func testSettingsPersistAtomicallyWithPrivatePermissions() throws {
         let root = try temporaryDirectory()

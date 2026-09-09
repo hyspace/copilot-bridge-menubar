@@ -14,7 +14,7 @@ Compiled Bun backend
   ├─ same start/auth routines and credential refresh
   ├─ byte-transparent upstream usage observer (no tee/read-ahead)
   ├─ parent-PID watchdog
-  └─ pinned CLI middleware: LAN key + health identity
+  └─ pinned CLI health identity and usage events
 ```
 
 Swift targets keep pure configuration/accounting (`BridgeCore`), process ownership
@@ -67,7 +67,7 @@ from a live listener; actual occupied ports remain protected.
 
 General bridge improvements are committed in the `hyspace/copilot-bridge` fork:
 
-1. Optional inbound access-key middleware and health instance identity.
+1. Health instance identity, with keyless local/LAN access.
 2. Optional authenticated JSONL usage/auth events; no model content is retained.
 3. Content header correction after SSE normalization, backpressure and cancellation.
 4. Deterministic listener-error exit and one-shot auth with non-overlapping refresh.
@@ -81,9 +81,8 @@ There are no build-time source replacements. End users do not need Bun or a chec
 ## Security and accounting
 
 OpenAI authentication remains owned by Codex; the adapter never forwards those
-credentials to Copilot. The LAN key is stored in Keychain, passed through child
-environment (not process argv), and removed from upstream requests by the CLI's
-header allowlist. LAN HTTP still needs a trusted network; it is not TLS.
+credentials to Copilot. LAN requests have no additional key or incoming authentication requirement.
+LAN HTTP must stay on a trusted network; it is neither authenticated nor TLS.
 
 GitHub login uses the existing CLI device flow and 0600 credential cache.
 The CLI auth command exits after success rather than leaving its refresh timer

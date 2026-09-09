@@ -38,12 +38,14 @@ jobs:
           python3 scripts/build-backend.py
           python3 scripts/test-auth.py
           python3 scripts/integration-test.py
+          (cd vendor/copilot-bridge && bun run test:http)
       - name: Build and verify standalone app
         run: |
           bash scripts/build-app.sh
           test "$(build/'Copilot Bridge.app'/Contents/MacOS/CopilotBridgeMenuBar --version)" = 0.1.0
           test "$(lipo -archs build/'Copilot Bridge.app'/Contents/MacOS/CopilotBridgeMenuBar)" = arm64
           test "$(lipo -archs build/'Copilot Bridge.app'/Contents/Resources/copilot-bridge-service)" = arm64
+          CBM_TEST_BINARY="$PWD/build/Copilot Bridge.app/Contents/Resources/copilot-bridge-service" python3 scripts/integration-test.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: Copilot-Bridge-arm64

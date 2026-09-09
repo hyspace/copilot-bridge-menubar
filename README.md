@@ -6,6 +6,8 @@ MIT licensed. No Dock icon, no normal application window, no end-user Bun instal
 原生菜单栏 App：管理 Copilot Bridge、GitHub 设备授权、token 用量和剩余 credits。
 **不会修改 Codex/Claude 配置，不会接管或终止你原来运行的 CLI。**
 
+![菜单栏面板预览](docs/screenshots/overview.png)
+
 ## 安装：Homebrew formula（不是 cask）
 
 ```sh
@@ -83,11 +85,10 @@ App 不使用无效的 provider 字段 `prefer_websockets`。
 
 ## 局域网安全
 
-局域网模式要求每个请求携带 `X-Bridge-Key`。随机密钥保存在 macOS Keychain，
-不写入设置 JSON、命令行或日志。参考配置会包含密钥，只交给可信设备。
+局域网模式不需要 key，也不需要额外认证头。切换后监听 `0.0.0.0`，
+同一网络里的设备可以通过此 Mac 的地址与端口访问。
 
-**HTTP 不加密，不要暴露到公网、不要做端口转发。** 访问密钥不代替 TLS 或网络隔离。
-切换到 LAN 模式后，本机客户端也必须更新参考配置中的访问头。
+**仅在可信内网使用。HTTP 未加密且没有入站鉴权，不要暴露到公网或做端口转发。**
 
 ## 用量和数据
 
@@ -104,11 +105,10 @@ App 不使用无效的 provider 字段 `prefer_websockets`。
 
 ```text
 ~/Library/Application Support/CopilotBridgeMenuBar/
-  settings.json       # 不含访问密钥
+  settings.json       # App 设置，不含账号凭据
   usage.sqlite        # 每日/模型聚合，不含提示词或输出
   Logs/bridge*.log    # 有限轮转日志
 ~/.local/share/copilot-bridge/github_token  # CLI 自己维护，权限 0600
-macOS Keychain: com.hyspace.copilot-bridge-menubar / lan-access
 ```
 
 ## 开发
@@ -128,7 +128,7 @@ bash scripts/build-app.sh
 
 构建依赖：Apple Silicon Mac、Xcode/Command Line Tools（Swift 6+）、Python 3、Bun 1.4.1。
 Swift 包没有第三方远程依赖。底层 fork 通过 Git submodule 固定提交，JS 依赖由其 `bun.lock` 固定。
-LAN 鉴权、健康标识、token 观测、认证和流式修复都在固定的 CLI fork 提交中；本仓库只复制源码进行打包，**不做构建时源码补丁，也不重启现有 CLI**。
+健康标识、token 观测、认证和流式修复都在固定的 CLI fork 提交中；本仓库只复制源码进行打包，**不做构建时源码补丁，也不重启现有 CLI**。
 
 测试只使用假的 GitHub/Copilot 上游、临时 HOME、随机非 4142 端口。
 测试前后校验当前 4142 监听进程不变，不读取真实凭据、不消耗真实模型额度。

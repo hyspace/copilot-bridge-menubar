@@ -8,14 +8,14 @@ has completed.
 - Native build produces an arm64 `.app` and arm64 standalone backend.
 - `codesign --verify --deep --strict` passes for the ad-hoc-signed local app.
 - Main executable reports `0.1.0`; bundle records the exact CLI submodule SHA.
-- CLI fork suite: **280 tests passed**.
+- CLI fork suite: **334 tests passed**.
 - App native suite: **25 tests passed** (configuration/accounting, real owned
   process lifecycle against a fake backend, and offscreen rendering of our own UI).
 - App/CLI event contract test passes.
 - Staged CLI stream regression suite: **34 tests passed**.
 - Fake GitHub auth: pending → success, denial, private credential file, natural
   one-shot process exit.
-- Compiled backend integration: **103 fake model requests**, authentication,
+- Compiled backend integration: **103 fake model requests**, keyless access,
   model catalog, 413 and stream-interruption accounting, conflicting listener
   handling and parent-death cleanup.
 - Native lifecycle tests include repeated restarts and FD-count bounds, genuine
@@ -32,19 +32,19 @@ has completed.
 | Requirement | Evidence / remaining work |
 | --- | --- |
 | Menu-bar only, arm64 | `LSUIElement`, accessory activation policy, `NSStatusItem`, transient popover; arm64 build/signature checks |
-| Separate public MIT repo | Independent local Git repository, MIT, contribution/security docs and pinned fork; **public repository creation pending permission** |
+| Separate public MIT repo | Independent local Git repository, MIT, contribution/security docs and pinned fork; **public repository creation/release gates tracked below** |
 | Daemon/runtime best practices | Bundled pinned Bun runtime, owned process handles, no shell, bounded streams/logs, deadlines, retry circuit breaker and native lifecycle tests |
 | Preserve existing command behavior | Exact default arguments and environment-cleaning tests; no user-config writes |
-| Local/LAN and port | Typed scope/port settings, validated arguments, Keychain-backed LAN key and backend route-auth tests |
+| Local/LAN and port | Typed scope/port settings, validated arguments, keyless backend health/catalog tests |
 | CLI options | `docs/cli-options.md`; write-config / interactive-terminal / token-printing options are explicitly fixed for this GUI product |
 | Codex reference only | Clipboard-only reference generation, valid WebSocket key, OpenAI auth choice preserved |
 | Tokens and GitHub credits | API-reported metadata aggregation; actual quota schema recognized without assuming monetary conversion |
 | Device authorization | Existing fork auth routines, structured events, success/denial/deadline tests |
 | Keep current bridge alive | All testing is isolated; no global process killing or port-based takeover |
-| Homebrew formula and CI release | Workflows and formula generator ready; **hosted CI, public Release and installation from the public tap remain pending permission** |
-| Commit CLI improvements in user's fork | Local CLI commit is referenced directly; no build-time source patches; **push to the public fork remains pending permission** |
+| Homebrew formula and CI release | Workflows and formula generator ready; **hosted CI, public Release and installation from the public tap are release gates** |
+| Commit CLI improvements in user's fork | Local CLI commit is referenced directly; no build-time source patches; **merged protocol compatibility and supervisor fixes are published to the fork main branch** |
 
-## Publication order after explicit authorization
+## Publication order
 
 1. Push the CLI support commit to the user's `hyspace/copilot-bridge` fork.
 2. Create/push the public MIT App repository.
@@ -52,5 +52,9 @@ has completed.
 4. Tag a release, verify asset publication and generated formula commit.
 5. Install/test the formula from the published tap, without auto-starting it.
 
-Do not mark the overall project complete until the pending public steps are
+Do not mark the overall project complete until the public release steps are
 actually performed and checked. No Developer ID signing or notarization is claimed.
+
+The CLI fork main includes `fix/codex-protocol-compatibility` via merge `7561efc`.
+Keyless LAN access is intentional. Only the private parent/child diagnostic channel
+uses an internal token; clients need no additional header.

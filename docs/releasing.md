@@ -42,4 +42,4 @@ acceptance, staple the ticket, re-package, and only then calculate the release c
 
 Homebrew installation does not auto-start a daemon or rewrite Codex configuration.
 `brew services` is optional and user-initiated. On removal, personal settings,
-Keychain keys and usage history are intentionally preserved.
+usage history are intentionally preserved.

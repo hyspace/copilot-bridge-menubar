@@ -26,7 +26,7 @@ final class BridgeUITests: XCTestCase {
                 .background(Color(nsColor: .windowBackgroundColor))
             // ImageRenderer cannot render AppKit-backed segmented controls/scroll views.
             // Cache our own hidden hosting view instead. Never order a window on screen.
-            let rectangle = NSRect(x: 0, y: 0, width: 420, height: 620)
+            let rectangle = NSRect(x: 0, y: 0, width: PanelLayout.width, height: PanelLayout.height)
             let host = NSHostingView(rootView: view)
             host.frame = rectangle
             host.appearance = NSAppearance(named: .aqua)
@@ -39,8 +39,8 @@ final class BridgeUITests: XCTestCase {
             host.layoutSubtreeIfNeeded()
             let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
             host.cacheDisplay(in: host.bounds, to: bitmap)
-            XCTAssertEqual(host.bounds.size.width, 420)
-            XCTAssertEqual(host.bounds.size.height, 620)
+            XCTAssertEqual(host.bounds.size.width, PanelLayout.width)
+            XCTAssertEqual(host.bounds.size.height, PanelLayout.height)
             let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
             XCTAssertGreaterThan(png.count, 10000, "Blank \(title) rendering")
             if let output { try png.write(to: output.appendingPathComponent("\(title).png")) }

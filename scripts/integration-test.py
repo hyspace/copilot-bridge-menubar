@@ -13,7 +13,8 @@ import urllib.error
 import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-BINARY = ROOT / "build/copilot-bridge-service"
+BINARY = pathlib.Path(os.environ.get("CBM_TEST_BINARY", str(ROOT / "build/copilot-bridge-service"))).resolve()
+assert BINARY.is_relative_to(ROOT / "build"), "Only this checkout's build artifacts may be tested"
 assert BINARY.is_file(), "Build the backend first."
 ORIGINAL_PID = subprocess.run(["lsof", "-tiTCP:4142", "-sTCP:LISTEN"], capture_output=True, text=True).stdout.strip()
 UPSTREAM_CALLS = []
@@ -40,7 +41,6 @@ class Mock(http.server.BaseHTTPRequestHandler):
         self.send(json.dumps({"object": "list", "data": [MODEL]}))
     def do_POST(self):
         assert self.headers.get("Authorization") == "Bearer FAKE_COPILOT_TEST_TOKEN"
-        assert self.headers.get("X-Bridge-Key") is None, "LAN credential leaked upstream"
         assert self.headers.get("ChatGPT-Account-ID") is None, "OpenAI identity leaked upstream"
         body = json.loads(self.rfile.read(int(self.headers["content-length"])))
         UPSTREAM_CALLS.append(body.get("input"))
@@ -63,10 +63,9 @@ def port():
     assert value != 4142
     return value
 
-def fetch(service_port, path, key="FAKE_LAN_KEY", body=None):
+def fetch(service_port, path, body=None):
     assert service_port != 4142
     headers = {"content-type":"application/json"}
-    if key is not None: headers["X-Bridge-Key"] = key
     if body is not None:
         headers["Authorization"] = "Bearer FAKE_OPENAI_DO_NOT_FORWARD"
         headers["ChatGPT-Account-ID"] = "FAKE_ACCOUNT"
@@ -97,7 +96,7 @@ with tempfile.TemporaryDirectory(prefix="cbm-integration-") as directory:
     config.write_text('model = "gpt-6-astra"\n')
     env = {"HOME": str(home), "PATH": "/usr/bin:/bin", "NO_COLOR": "1", "NO_PROXY":"*",
         "COPILOT_TOKEN":"FAKE_COPILOT_TEST_TOKEN", "COPILOT_BASE_URL":f"http://127.0.0.1:{mock.server_port}",
-        "COPILOT_BRIDGE_ACCESS_KEY":"FAKE_LAN_KEY", "COPILOT_BRIDGE_INSTANCE_ID":"integration",
+        "COPILOT_BRIDGE_INSTANCE_ID":"integration",
         "COPILOT_BRIDGE_EVENTS_TOKEN":"FAKE_EVENTS_CHANNEL", "CBM_PARENT_PID":str(os.getpid())}
     p = port()
     args = [str(BINARY),"start","--host","127.0.0.1","--port",str(p),
@@ -107,8 +106,6 @@ with tempfile.TemporaryDirectory(prefix="cbm-integration-") as directory:
         child = subprocess.Popen(args, env=env, stdout=log, stderr=subprocess.STDOUT)
         try:
             wait_ready(p, child)
-            assert fetch(p, "/healthz", key=None)[0] == 401
-            assert fetch(p, "/healthz", key="WRONG")[0] == 401
             assert fetch(p, "/healthz")[0] == 200
             assert fetch(p, "/v1/responses")[0] == 404  # HTTP GET is not WebSocket.
             status, data = fetch(p, "/v1/models?client_version=0.153.3")
@@ -166,6 +163,6 @@ time.sleep(30)
 mock.shutdown(); mock.server_close()
 current = subprocess.run(["lsof","-tiTCP:4142","-sTCP:LISTEN"],capture_output=True,text=True).stdout.strip()
 assert ORIGINAL_PID == current, "Protected listener identity changed"
-print("PASS: compiled arm64 backend, 103 fake requests, LAN auth, usage/413/interruption,")
+print("PASS: compiled arm64 backend, 103 keyless fake requests, usage/413/interruption,")
 print("      catalog compatibility, no config writes, port conflict, parent-death cleanup.")
 print(f"Protected 4142 listener unchanged: {current or '(none)'}")

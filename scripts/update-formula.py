@@ -29,9 +29,19 @@ class CopilotBridgeMenubar < Formula
 
   depends_on arch: :arm64
   depends_on macos: :sonoma
+  skip_clean "libexec/Copilot Bridge.app"
 
   def install
-    libexec.install "Copilot Bridge.app"
+    if (buildpath/"Copilot Bridge.app").directory?
+      libexec.install "Copilot Bridge.app"
+    elsif (buildpath/"Contents/Info.plist").file?
+      # Some archive strategies enter the archive's only top-level directory.
+      (libexec/"Copilot Bridge.app").mkpath
+      (libexec/"Copilot Bridge.app").install buildpath.children
+    else
+      odie "Release archive does not contain Copilot Bridge.app"
+    end
+    bin.mkpath
     (bin/"copilot-bridge-menubar").write <<~SH
       #!/bin/bash
       set -euo pipefail
@@ -43,6 +53,7 @@ class CopilotBridgeMenubar < Formula
         *) echo "Usage: copilot-bridge-menubar [--version|--foreground]" >&2; exit 2 ;;
       esac
     SH
+    (bin/"copilot-bridge-menubar").chmod 0755
   end
 
   service do

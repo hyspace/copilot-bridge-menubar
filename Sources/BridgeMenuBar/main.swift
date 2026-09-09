@@ -28,7 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item.button?.target = self; item.button?.action = #selector(togglePopover)
         item.button?.toolTip = "Copilot Bridge — 已停止"
         popover.behavior = .transient
-        popover.contentSize = NSSize(width: 420, height: 620)
+        popover.contentSize = NSSize(width: PanelLayout.width, height: PanelLayout.height)
         popover.contentViewController = NSHostingController(rootView: MenuView(controller: model))
         observer = model.$state.sink { [weak self] state in
             self?.statusItem?.button?.toolTip = "Copilot Bridge — \(state.rawValue)"

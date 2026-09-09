@@ -58,7 +58,7 @@ public struct BridgeSettings: Codable, Equatable {
     }
 
     public func environment(inheriting source: [String: String], home: String,
-                            parentPID: Int32, instance: String, lanKey: String?,
+                            parentPID: Int32, instance: String,
                             eventToken: String? = nil) -> [String: String] {
         // Do not inherit arbitrary runtime loaders, API credentials, or trace destinations.
         let allowed = ["PATH", "TMPDIR", "LANG", "LC_ALL", "SSL_CERT_FILE", "SSL_CERT_DIR",
@@ -80,11 +80,10 @@ public struct BridgeSettings: Codable, Equatable {
         env["NO_PROXY"] = noProxy
         env.removeValue(forKey: "no_proxy")
         if !vsCodeVersion.isEmpty { env["COPILOT_VSCODE_VERSION"] = vsCodeVersion }
-        if scope == .lan { env["COPILOT_BRIDGE_ACCESS_KEY"] = lanKey }
         return env
     }
 
-    public func referenceConfig(lanKey: String?, hostName: String = "<此 Mac 的局域网地址>") -> String {
+    public func referenceConfig(hostName: String = "<此 Mac 的局域网地址>") -> String {
         let address = scope == .local ? "127.0.0.1" : hostName
         let selectedModel = model.isEmpty ? "<从 Copilot 可用模型中选择>" : model
         var lines = [
@@ -101,9 +100,7 @@ public struct BridgeSettings: Codable, Equatable {
                   "wire_api = \"responses\"", "supports_websockets = false",
                   "requires_openai_auth = \(referenceRequiresOpenAIAuth)"]
         if scope == .lan {
-            lines += ["", "# 局域网访问密钥：只交给可信设备；HTTP 不提供传输加密。",
-                      "[model_providers.bridge.http_headers]",
-                      "\"X-Bridge-Key\" = \(Self.toml(lanKey ?? "<访问密钥>"))"]
+            lines += ["", "# 局域网访问无需密钥。仅限可信网络，不要暴露到公网。"]
         }
         return lines.joined(separator: "\n") + "\n"
     }

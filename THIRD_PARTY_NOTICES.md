@@ -7,7 +7,7 @@
   `Resources/Licenses` and https://github.com/oven-sh/bun.
 - The CLI's production npm dependencies are locked in its `bun.lock`.
   Their available license files are copied into the app during packaging.
-- Native UI: Apple AppKit, SwiftUI, Security and ServiceManagement frameworks.
+- Native UI: Apple AppKit, SwiftUI, SystemConfiguration and ServiceManagement frameworks.
   SQLite is provided by macOS; this app does not ship a separate SQLite library.
 
 The project's MIT license does not replace licenses of bundled dependencies.

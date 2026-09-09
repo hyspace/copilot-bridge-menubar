@@ -37,7 +37,6 @@ public final class BridgeController: ObservableObject {
     private var unhealthyCount = 0
     private var instance = ""
     private var currentSettings: BridgeSettings?
-    private var lanKey: String?
     private var authOnly = false
     private var intentionallyStopping = false
     private var pendingRestart = false
@@ -125,20 +124,18 @@ public final class BridgeController: ObservableObject {
             state = .failed; message = "缺少内置 Apple Silicon 服务。请使用 scripts/build-app.sh 生成完整 .app。"; return
         }
         do {
-            if settings.scope == .lan { lanKey = try AccessKey.loadOrCreate() }
-            else { lanKey = nil }
             instance = UUID().uuidString
             let child = Process()
             let stdout = Pipe(), stderr = Pipe()
             let eventToken = UUID().uuidString + UUID().uuidString
-            let pump = try ProcessOutput(root: root, secrets: [lanKey, eventToken].compactMap { $0 },
+            let pump = try ProcessOutput(root: root, secrets: [eventToken],
                                          eventToken: eventToken)
             child.executableURL = binary
             child.arguments = settings.arguments(authOnly: loginOnly)
             child.environment = settings.environment(inheriting: ProcessInfo.processInfo.environment,
                 home: home.path,
                 parentPID: ProcessInfo.processInfo.processIdentifier, instance: instance,
-                lanKey: lanKey, eventToken: eventToken)
+                eventToken: eventToken)
             child.currentDirectoryURL = root
             child.standardInput = FileHandle.nullDevice
             child.standardOutput = stdout; child.standardError = stderr
@@ -211,12 +208,11 @@ public final class BridgeController: ObservableObject {
     public func copyReference() {
         do {
             _ = try settings.validated()
-            let key = settings.scope == .lan ? try AccessKey.loadOrCreate() : nil
             let host = (SCDynamicStoreCopyLocalHostName(nil) as String?).map { $0 + ".local" }
                 ?? "<此 Mac 的局域网地址>"
             NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(settings.referenceConfig(lanKey: key, hostName: host), forType: .string)
-            message = "参考配置已复制；没有修改 Codex 配置。局域网地址请核对实际主机名/IP。"
+            NSPasteboard.general.setString(settings.referenceConfig(hostName: host), forType: .string)
+            message = "已复制参考配置，现有文件未改动。"
         } catch { message = error.localizedDescription }
     }
     public func openLogs() { NSWorkspace.shared.open(root.appendingPathComponent("Logs")) }
@@ -285,7 +281,6 @@ public final class BridgeController: ObservableObject {
         guard let currentSettings else { return nil }
         var request = URLRequest(url: URL(string: "http://127.0.0.1:\(currentSettings.port)\(path)")!)
         request.timeoutInterval = timeout
-        if let lanKey { request.setValue(lanKey, forHTTPHeaderField: "X-Bridge-Key") }
         return request
     }
     private func checkHealth() {
