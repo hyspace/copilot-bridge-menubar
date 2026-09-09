@@ -30,7 +30,7 @@ with tempfile.TemporaryDirectory(prefix="cbm-package-test-") as temporary:
     assert f'sha256 "{checksum}"' in content
     assert 'app "Copilot Bridge.app"' in content
     assert 'depends_on arch: :arm64' in content
-    assert 'depends_on macos: ">= :sonoma"' in content
+    assert 'depends_on macos: :sonoma' in content
     assert "releases/download/v#{version}/Copilot-Bridge-arm64.zip" in content
     assert not any(term in content for term in
                    ("system ", "preflight", "postflight", "launchctl", "no_quarantine", "zap "))

@@ -48,7 +48,7 @@ cask "copilot-bridge-menubar" do
   homepage "https://github.com/{args.repository}"
 
   depends_on arch: :arm64
-  depends_on macos: ">= :sonoma"
+  depends_on macos: :sonoma
 
   app "Copilot Bridge.app"
 end
