@@ -1,116 +1,122 @@
-# Architecture and failure boundaries
+# Codex Bridge architecture
 
 ```text
-NSStatusItem + transient NSPopover (SwiftUI, LSUIElement)
-  └─ BridgeController (MainActor)
-       ├─ owned Process, no shell, bundled arm64 executable
-       ├─ bounded nonblocking pipe readers → sanitised rotating logs
-       ├─ usage JSONL → daily/model token and billing aggregates
-       ├─ loopback health check with per-launch instance identifier
-       ├─ loopback /usage → daily account-balance snapshots + quota UI
-       └─ explicit Codex App routing switch → locked, journaled config transactions
+Codex App (task, history, context, permissions and workstation tools)
+  └─ one local Responses endpoint and source-qualified model catalog
+       ├─ Codex subscription → independent Pi OAuth → native official Responses
+       ├─ Copilot → existing model-specific compatibility/search pipeline
+       └─ Local → loaded-model discovery → Unsloth Responses
+                    ├─ namespace/replay adaptation
+                    └─ guarded Studio-native hosted-search seam
 
-Compiled Bun backend
-  ├─ pinned hyspace/copilot-bridge CLI (Git submodule)
-  ├─ same start/auth routines and credential refresh
-  ├─ byte-transparent upstream usage observer (no tee/read-ahead)
-  ├─ isolated pure TOML planner (no filesystem mutation or provider calls)
-  ├─ parent-PID watchdog
-  └─ pinned CLI health identity and usage events
+Native menu app
+  ├─ owned Bun child, parent-death watchdog and instance health identity
+  ├─ private /bridge/* management channel, source status and quota polling
+  ├─ dedicated stdio Keychain broker (separate from UI/log/event pipes)
+  ├─ authenticated usage events → provider/day/model SQLite totals
+  ├─ one total-token heatmap + compact source rows
+  └─ explicit Codex config toggle → locked, journaled, verified atomic edits
 ```
 
-Swift targets keep pure configuration/accounting (`BridgeCore`), process ownership
-and OS integrations (`BridgeRuntime`), reusable menu content (`BridgeUI`), and the
-application entry point (`BridgeMenuBar`) separate. The runtime's backend/home
-injection is internal to the module for tests; release users cannot select an
-arbitrary executable through an environment variable.
+The product supports Codex App only. There is no inner Codex CLI/agent for inference.
+The installed engine is used only by an opt-in isolated verification harness.
+Legacy CLI adapters remain in the core to preserve Copilot regressions, not to
+expand the native app's supported-client scope.
 
-Codex App is the only supported client. Native `CodexConfigManager` owns private
-backups, hashes, locks and atomic swaps. A bounded private pipe to the bundled
-TOML planner computes lossless edits. Only an explicit switch action mutates
-Codex config; launch, service startup, quit and installation do not. See
-[`configuration.md`](configuration.md) for restore and crash-recovery semantics.
+## What is shared and what is not
 
-## Lifecycle
+Shared code provides bounded HTTP/JSON/SSE framing, cancellation, source routing,
+namespace identity restoration, usage observation and source-qualified catalogs.
+Copilot's ID corrections, fallback conversions, reasoning handling and search
+configuration remain inside its adapter. Official Responses preserve unknown
+fields, encrypted reasoning, server tools and event bytes; they are not run
+through Copilot's protocol repairs.
 
-The menu-bar app owns one foreground service. It is not a double-forked daemon:
-ownership and exit state remain observable. Login startup uses Apple's
-`SMAppService.mainApp`, controlled by the app's login-item setting.
+Local Responses keep native text/function/image behavior. A namespace adapter
+flattens model-facing names and restores Codex-facing names/call IDs. Only the
+supported custom `apply_patch` grammar is accepted. Unknown tools/files/history
+are rejected rather than silently discarded. Readable reasoning and prior search
+metadata are explicitly represented in replayable history.
 
-Stop sends SIGTERM to the exact owned `Process`. After five seconds it may send
-SIGKILL only if that same `Process` is still running. No name matching, port-based
-killing, global signals or takeover of an already-running CLI.
+The local hosted-search seam translates only a declared hosted search tool into
+an internal function. It intercepts that function, asks the **same Studio endpoint**
+to execute its own allowlisted search, and merges one Responses lifecycle. It never
+executes a workstation function or silently uses a cloud search account. Ordinary
+output remains pull-driven. Actual search results require paired native tool events;
+plain model text is not execution evidence. Cached-only search, unsupported filters,
+extra tool requests and pending approvals fail explicitly. Mixed client/search calls
+retain the result in visible history while waiting for Codex to execute client tools.
 
-If the UI crashes or is SIGKILLed, the backend checks its parent every two seconds
-and exits when the parent changes. Unexpected exits have exponential backoff and
-a circuit breaker (five retries per ten minutes). Port conflicts are not retried
-by killing somebody else's listener.
+## Discovery and routing
 
-Health checks are bounded and verify a per-launch identity. A timeout alone does
-not prove death and does not kill a busy model request. Starting and device-auth
-states have deadlines; the user can explicitly cancel.
-Receiving auth success clears the device prompt without treating it as expiry.
-The startup clock resets after a human finishes device authorization. Even the
-initial auth request (before any device code arrives) has a bounded deadline.
-Port preflight uses `SO_REUSEADDR` to distinguish recent TIME_WAIT connections
-from a live listener; actual occupied ports remain protected.
+`/v1/models?client_version=...` returns Codex metadata; plain `/v1/models` returns
+the OpenAI-style list. Model IDs are qualified with `codex/`, `copilot/`, `local/`.
+Provider failures are isolated. Catalog reads have bounded upstream waits, and a
+forced refresh arriving during another refresh is queued rather than lost.
 
-## Resource bounds
+Local discovery does not request model loads. It filters loaded conversational
+models and uses reported runtime context, not the model's theoretical maximum.
+The fingerprint includes context, quantization/build and declared capabilities.
+Before local inference, discovery is checked again. There is no atomic residency
+lease in this API: an upstream operator changing models concurrently remains a
+race that must be considered during acceptance.
 
-- One in-flight health request and one quota request; timeouts and cancellation.
-- Two nonblocking serial pipe readers; no Task per token, EOF cancellation,
-  cancellation-safe FD closing, final output draining before exit publication.
-- Last 200 diagnostic lines only, 64 KiB line framing, redaction and 8 KiB log truncation.
-- Rotating logs (about 2 MiB active plus three historical files).
-- SQLite WAL with checkpoints; UTC event timestamps aggregate by local date.
-  Hourly maintenance retains two days of dedup IDs and 730 days of daily totals.
-- A 26-week native activity grid displays token totals and server-reported request
-  credits. Remaining account quota is a separate card; see `activity.md`.
-- Retry-response observation is capped at one second and 4 MiB. Repeated stream
-  snapshots replace counters rather than being counted as additional charges.
-- SSE/JSON observation uses an 8M-character cap.
-  Oversized bodies are still forwarded unchanged but usage may be unavailable.
-- No response clone/tee branch for model streaming. Downstream cancellation
-  cancels the observer's upstream reader. The pinned CLI normalizer is also pull-driven and cancellation-aware; malformed unterminated
-  SSE frames are rejected above 8 MiB instead of buffering forever.
+A task's established source can route unqualified background names. Without such
+a binding, old bare names are accepted only for a Copilot-only catalog. Missing
+routes fail; they are never redirected to another billing source. The in-memory
+binding is bounded/expiring and is not a replacement for Codex task persistence.
 
-## Upstream ownership and packaging
+## Independent authentication
 
-General bridge improvements are committed in the `hyspace/copilot-bridge` fork:
+Codex OAuth uses `@earendil-works/pi-ai` 0.85.1 authentication methods only. Browser
+and device-code interaction is initiated in the app. The backend neither imports
+Codex App's credentials nor reads/writes its `auth.json`. A private native stdio
+broker stores this account in Keychain and holds a lifetime OS lock. Refresh,
+login commit and logout are serialized; cancellation cannot resurrect a login.
+Tokens must persist before a refreshed credential is returned. A 401 retry may
+refresh once but cannot switch accounts mid-request.
 
-1. Health instance identity, with keyless local/LAN access.
-2. Optional authenticated JSONL usage/auth events; no model content is retained.
-3. Content header correction after SSE normalization, backpressure and cancellation.
-4. Deterministic listener-error exit and one-shot auth with non-overlapping refresh.
-5. Valid Codex WebSocket configuration and preservation of explicit OpenAI auth.
+Caller authentication, cookies and account IDs are never copied to a different
+upstream. Official headers are source-owned. Local keys are keyed to the normalized
+endpoint; changing the host/port/path cannot leak a previous key. A missing required
+key disables Local discovery without preventing other sources from starting.
 
-`scripts/build-backend.py` copies the pinned source unchanged into a disposable
-build directory. It defines the CLI's supported compile-time version constant,
-then bundles the CLI and the small parent-watchdog entry point with Bun.
-There are no build-time source replacements. End users do not need Bun or a checkout.
+GitHub retains the shared Bridge credential-cache/device flow. Reauthorization
+requires stopping competing owners of that GitHub cache. The independently managed
+Codex Keychain account is not that shared cache.
 
-## Security and accounting
+## Native lifecycle and resource boundaries
 
-OpenAI authentication remains owned by Codex; the adapter never forwards those
-credentials to Copilot. LAN requests have no additional key or incoming authentication requirement.
-LAN HTTP must stay on a trusted network; it is neither authenticated nor TLS.
+- One owned service Process, no shell. No port/name-based kill or takeover.
+- SIGTERM, then bounded SIGKILL only for that same owned Process; parent-death
+  watchdog; bounded crash retries; health failures do not terminate a busy task.
+- Private control requests are serialized; health, status and per-source quotas
+  have independent bounded/cancellable tasks.
+- Keychain IPC is bounded (including pending commands) and has no credential logs.
+- Two bounded pipe readers, authenticated event channel, last 200 UI log lines,
+  four rotating files of approximately 2 MiB each.
+- SSE/JSON parsing and observations are bounded. The legacy byte observer does not
+  tee/read ahead. Hosted loops record each actual upstream attempt once.
+- Source status and cached account quotas are separate. Old observations are never
+  stamped with a new refresh time when a network request fails.
+- SQLite transaction/backup details are documented in [activity](activity.md).
 
-GitHub login uses the existing CLI device flow and 0600 credential cache.
-The CLI auth command exits after success rather than leaving its refresh timer
-alive forever. Expired and denied authorization have explicit UI states.
+## Configuration and packaging
 
-The parent creates a fresh private event-channel token per launch. Only matching
-JSONL records can change auth/accounting state; untrusted error text cannot spoof
-a supervisor event merely by using the same line prefix.
+The transactional toggle is the only native action that writes Codex config.
+Start, quit, installation and status polling do not rewrite it. Existing backup
+ownership identifiers stay unchanged despite the product rename. See
+[configuration](configuration.md) for source-qualified model restoration.
 
-Telemetry records a request UUID, timestamp, model identifier, numeric token usage and raw nano-AIU billing,
-HTTP status and completion category. It never stores a prompt or model output.
-Missing usage is not treated as measured zero. Counts include actual retries and
-bridge-internal model calls, not just user turns.
+The app vendors an exact core commit. Packaging copies that source unchanged,
+bundles the standalone Bun runtime, includes dependency licenses and records source
+provenance. It refuses dirty/unrecorded vendor contents. This branch produces a
+local review artifact only; it does not install or publish it.
 
-## Limits
+## Explicit acceptance limits
 
-GitHub's internal quota API may change. Credits are shown in returned units,
-without guessing USD conversions. Quota failures do not stop the model service.
-No historical standalone-service token reconstruction, no WebSocket support, no silent config
-rewrites, and no claim of a formal memory-leak proof.
+Server declarations are not a model-quality or Computer Use certification. A
+subscription login is not proof that every model/tool is entitled. Full desktop
+Computer Use, a live subscribed Codex account, and server/GPU-side cancellation
+must be verified separately from synthetic API and fixture tests. Internal upstream
+interfaces can change independently of this app.

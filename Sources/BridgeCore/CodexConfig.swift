@@ -17,8 +17,11 @@ public struct CodexPlanRequest: Codable, Sendable {
     public var port: Int
     public var token: String?
     public var session: CodexManagedPlan?
-    public init(action: String, text: String, port: Int, token: String? = nil, session: CodexManagedPlan? = nil) {
+    public var originalText: String?
+    public init(action: String, text: String, port: Int, token: String? = nil, session: CodexManagedPlan? = nil,
+                originalText: String? = nil) {
         self.action = action; self.text = text; self.port = port; self.token = token; self.session = session
+        self.originalText = originalText
     }
 }
 public struct CodexPlanResult: Codable, Sendable {
@@ -267,7 +270,8 @@ public final class CodexConfigManager: @unchecked Sendable {
             // metadata is committed. Validate ownership semantically; do not
             // overwrite that writer just to recover the transaction journal.
             if transaction.kind == "enable", let plan = transaction.plan {
-                _ = try planned(.init(action: "disable", text: current.text, port: transaction.port, session: plan))
+                _ = try planned(.init(action: "disable", text: current.text, port: transaction.port, session: plan,
+                                      originalText: before.text))
                 journal.active = transaction.next
                 journal.activeSeal = transaction.next == nil ? nil : journal.pendingSeal
             } else {
@@ -324,10 +328,11 @@ public final class CodexConfigManager: @unchecked Sendable {
                 var result = CodexSwitchStatus()
                 if let active = journal.active {
                     do {
-                        let (transaction, _, after) = try load(active, seal: journal.activeSeal)
+                        let (transaction, original, after) = try load(active, seal: journal.activeSeal)
                         guard let plan = transaction.plan else { throw problem("The original provider backup is missing.") }
                         if !sameContents(current, after) {
-                            _ = try planned(.init(action: "disable", text: current.text, port: plan.port, session: plan))
+                            _ = try planned(.init(action: "disable", text: current.text, port: plan.port, session: plan,
+                                                  originalText: original.text))
                         }
                         result.known = true; result.enabled = true; result.managed = true; result.port = plan.port
                         result.canChange = true
@@ -366,12 +371,13 @@ public final class CodexConfigManager: @unchecked Sendable {
             }
             let id = UUID().uuidString.lowercased()
             if enabled, let active = journal.active {
-                let (transaction, _, installed) = try load(active, seal: journal.activeSeal)
+                let (transaction, original, installed) = try load(active, seal: journal.activeSeal)
                 guard let plan = transaction.plan, plan.port == port else {
                     throw problem("Turn Codex routing off before changing its port. The original backup is retained.")
                 }
                 if !sameContents(before, installed) {
-                    _ = try planned(.init(action: "disable", text: before.text, port: port, session: plan))
+                    _ = try planned(.init(action: "disable", text: before.text, port: port, session: plan,
+                                          originalText: original.text))
                 }
                 return // Repeated enable never overwrites the original restore point.
             }
@@ -389,7 +395,8 @@ public final class CodexConfigManager: @unchecked Sendable {
                 kind = "disable"; plan = nil
                 if sameContents(before, installed) { after = original }
                 else {
-                    let result = try planned(.init(action: "disable", text: before.text, port: managed.port, session: managed))
+                    let result = try planned(.init(action: "disable", text: before.text, port: managed.port, session: managed,
+                                                  originalText: original.text))
                     guard let text = result.text else { throw problem("Could not safely restore the original provider.") }
                     after = Image(data: original.data == nil && text.isEmpty ? nil : Data(text.utf8), mode: before.mode)
                 }

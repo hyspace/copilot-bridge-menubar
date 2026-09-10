@@ -110,8 +110,12 @@ final class BridgeRuntimeTests: XCTestCase {
                 && controller.today.credits == 1.5 && controller.today.creditReports == 1
         }
         let args = try JSONSerialization.jsonObject(with: Data(contentsOf: home.appendingPathComponent("argv.json"))) as! [String]
-        XCTAssertTrue(args.contains("--no-codex-setup"))
-        XCTAssertTrue(args.contains("literal; not-a-shell-command"))
+        XCTAssertEqual(args.first, "gateway")
+        XCTAssertTrue(args.contains("--settings"))
+        XCTAssertFalse(args.contains("literal; not-a-shell-command"))
+        let gatewaySettings = try JSONSerialization.jsonObject(
+            with: Data(contentsOf: home.appendingPathComponent("data/gateway-settings.json"))) as! [String: Any]
+        XCTAssertEqual(gatewaySettings["copilotModelOverride"] as? String, "literal; not-a-shell-command")
         let env = try JSONSerialization.jsonObject(with: Data(contentsOf: home.appendingPathComponent("env.json"))) as! [String: String]
         XCTAssertEqual(env["HOME"], home.path)
         XCTAssertNil(env["COPILOT_TOKEN"])

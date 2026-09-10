@@ -39,4 +39,10 @@ assert subprocess.check_output(
     [str(executable), "--version"], text=True, timeout=15).strip() == args.version
 revision = (app / "Contents/Resources/bridge-revision.txt").read_text().strip()
 assert re.fullmatch(r"[a-f0-9]{40}", revision), "Invalid recorded backend revision"
+if tuple(map(int, args.version.split("."))) >= (0, 5, 0):
+    assert info["CFBundleDisplayName"] == "Codex Bridge"
+    app_revision = (app / "Contents/Resources/app-revision.txt").read_text().strip()
+    assert re.fullmatch(r"[a-f0-9]{40}", app_revision), "Invalid recorded app revision"
+    notices = app / "Contents/Resources/Licenses"
+    assert (notices / "Pi-MIT.txt").is_file() and (notices / "Pi-source.txt").is_file(), "Missing Pi OAuth license/provenance"
 print(f"PASS: {app} — {args.version}, arm64, signature, bundle resources and backend revision")

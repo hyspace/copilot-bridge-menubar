@@ -55,13 +55,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/healthz":
             body = {"ok":True,"instance":os.environ["COPILOT_BRIDGE_INSTANCE_ID"]}
-        elif self.path == "/usage":
+        elif self.path in ("/usage", "/bridge/quota/copilot"):
             if (home/"quota-error").exists():
                 self.send_error(503)
                 return
             body = {"token_based_billing":True,"quota_snapshots":{"premium_interactions":{
                 "quota_remaining":75.5,"entitlement":100,"credits_used":24,
                 "percent_remaining":75.5,"unlimited":False}}}
+        elif self.path == "/bridge/status":
+            body = {"providers":[{"id":"copilot","enabled":True,"state":"ready","stale":False,"models":[]}],
+                    "codexLogin":{"state":"disconnected"},"refreshing":False}
         else:
             self.send_error(404)
             return

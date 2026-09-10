@@ -23,11 +23,14 @@ final class BridgeUITests: XCTestCase {
                 let requests = index % 10 + 2
                 let reports = index % 13 == 0 ? requests - 1 : requests
                 let charge = (index % 11) * 25_000_000
-                let sql = """
-                INSERT INTO totals(day,model,input,output,cached,requests,errors,unknown,nano_aiu,credit_reports)
-                VALUES('\(day.id)','synthetic',\(input),\(input / 5),\(input / 3),\(requests),0,0,\(charge),\(reports))
-                """
-                XCTAssertEqual(sqlite3_exec(db, sql, nil, nil, nil), SQLITE_OK)
+                for (provider, scale) in [(UsageProvider.codex, 2), (.copilot, 3), (.local, 1)] {
+                    let sql = """
+                    INSERT INTO totals(day,provider,model,input,output,cached,requests,errors,unknown,nano_aiu,credit_reports)
+                    VALUES('\(day.id)','\(provider.rawValue)','synthetic',\(input * scale),\(input / 5 * scale),
+                           \(input / 3),\(requests),0,0,\(provider == .copilot ? charge : 0),\(provider == .copilot ? reports : 0))
+                    """
+                    XCTAssertEqual(sqlite3_exec(db, sql, nil, nil, nil), SQLITE_OK)
+                }
             }
             if index % 9 != 0 {
                 let quota = try QuotaSnapshot.decode(Data("""
@@ -88,7 +91,7 @@ final class BridgeUITests: XCTestCase {
         XCTAssertNil(controller.servicePID)
     }
 
-    func testHoverDetailsContainTokensAndRequestCostNotAccountBalance() throws {
+    func testHoverDetailsContainSourceTokensNotAccountBalanceOrCharges() throws {
         let now = Date()
         var usage = UsageTotals()
         usage.input = 1200; usage.output = 300; usage.cached = 400; usage.requests = 2
@@ -101,15 +104,17 @@ final class BridgeUITests: XCTestCase {
                               quota: QuotaObservation(snapshot: snapshot, observedAt: now))
         let tooltip = ActivityText.tooltip(day)
         XCTAssertTrue(tooltip.contains("1,500 recorded tokens"))
-        XCTAssertTrue(tooltip.contains("1.234567891 credits used"))
-        XCTAssertTrue(tooltip.contains("Billing reported for 2 of 2 requests"))
+        XCTAssertTrue(tooltip.contains("Copilot: 1.5K"))
+        XCTAssertTrue(tooltip.contains("Codex: 0"))
+        XCTAssertTrue(tooltip.contains("Local: 0"))
+        XCTAssertFalse(tooltip.contains("credits used"))
         XCTAssertFalse(tooltip.contains("8,125.375"))
         XCTAssertFalse(tooltip.contains("1,874.625"))
         day.quota = nil
         XCTAssertEqual(ActivityText.credits(day), "1.234567891 credits used")
         day.usage.creditReports = 1
         XCTAssertEqual(ActivityText.credits(day), "1.234567891 reported credits used")
-        XCTAssertTrue(ActivityText.tooltip(day).contains("1 request has no recorded billing"))
+        XCTAssertFalse(ActivityText.tooltip(day).contains("no recorded billing"))
         day.usage.nanoAiu = 0
         XCTAssertEqual(ActivityText.credits(day), "0 reported credits used")
         usage = UsageTotals(); usage.unknown = 1; usage.requests = 1
@@ -120,12 +125,14 @@ final class BridgeUITests: XCTestCase {
         XCTAssertEqual(ActivityText.creditNumber(0.0000000005), "0.0000000005")
         XCTAssertEqual(ActivityText.creditNumber(0.0000000000001), "<0.000000000001")
     }
-    func testTokenAndCreditCoverageAreLabeledIndependently() {
+    func testHeatmapOnlyFlagsTokenCoverageNotUnrelatedBillingCoverage() {
         var usage = UsageTotals()
         usage.requests = 8; usage.unknown = 2; usage.creditReports = 0
         let day = ActivityDay(date: Date(), usage: usage)
         XCTAssertEqual(ActivityText.coverageSummary(day), "Tokens: 6/8 requests · Credits: 0/8")
-        XCTAssertTrue(ActivityText.tooltip(day).contains("Complete token usage for 6 of 8 requests."))
-        XCTAssertTrue(ActivityText.tooltip(day).contains("Billing reported for 0 of 8 requests."))
+        XCTAssertTrue(ActivityText.tooltip(day).contains("2 requests have missing token usage"))
+        XCTAssertFalse(ActivityText.tooltip(day).contains("Billing reported"))
+        usage.unknown = 0
+        XCTAssertFalse(ActivityDay(date: Date(), usage: usage).hasIncompleteUsage)
     }
 }

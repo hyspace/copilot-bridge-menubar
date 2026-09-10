@@ -1,46 +1,41 @@
-# Releases and Homebrew
+# Local review now; publication later
 
-This repository publishes a standalone macOS app and a Homebrew package.
-Installation places the app in `/Applications/Copilot Bridge.app`.
+This multi-provider branch is **not approved for publication**. Deliver the local
+`Codex Bridge.app`, ZIP, checksum and acceptance report first. Do not push a release
+tag, upload assets, update Homebrew, or replace a user's installed app during this
+work. Existing public casks/releases still describe the Copilot-only product.
 
-1. Publish any new CLI fork commit first, then update this repository's submodule reference. Merge App changes into `main` after CI passes.
-2. Choose a new semantic version; never overwrite a published tag or asset.
-3. Tag and push:
-
-   ```sh
-   git tag vX.Y.Z
-   git push origin vX.Y.Z
-   ```
-
-4. `release.yml` checks out the pinned submodule, installs its frozen lockfile,
-   tests Swift/TypeScript/auth/streaming/lifecycle on an arm64 macOS runner,
-   packages and ad-hoc signs both executables, and verifies code signatures.
-5. It publishes the ZIP and SHA256SUMS, calculates the actual archive checksum,
-   updates `Casks/copilot-bridge-menubar.rb` on `main`, then installs the published
-   app and verifies its version, arm64 binaries, bundle layout and signatures.
-   The install test rejects a symlink in place of the actual app bundle.
-
-The release workflow needs only the repository `GITHUB_TOKEN` with contents write
-permission. If branch protection forbids its package update, retain protection and
-submit the generated metadata through a PR instead; do not bypass user policies.
-Third-party workflow actions are pinned to commit SHAs.
-
-The packager checks that the CLI worktree is clean and matches the recorded
-submodule pin. It does not rewind an initialized submodule as a side effect of a build.
-
-For a local Developer ID build:
+## Review build
 
 ```sh
-VERSION=0.1.0 SIGN_IDENTITY="Developer ID Application: YOUR NAME (TEAMID)" \
-  bash scripts/build-app.sh
+VERSION=0.5.0 bash scripts/build-app.sh
+python3 scripts/verify-app.py --app 'build/Codex Bridge.app' --version 0.5.0
 ```
 
-The project does not store signing certificates. Notarization requires the
-maintainer's Apple account/certificate and is not silently simulated by ad-hoc signing.
-If you add notarization, submit the artifact with `xcrun notarytool`, wait for
-acceptance, staple the ticket, re-package, and only then calculate the release checksum.
+The exact clean core commit must match the recorded submodule pin. Local commits
+can provide reproducible provenance without publishing them. Builds never rewind
+an initialized vendor checkout. The build script does not launch either app or
+modify user settings, accounts, login items or live services.
 
-Installation does not auto-start a service or rewrite Codex configuration.
-Login startup is configured in the app. Uninstallation preserves personal settings
-and usage history. Package scripts do not remove quarantine attributes or disable
-macOS security checks.
+By default, both binaries are ad-hoc signed. This provides integrity checking,
+not a trusted Apple Developer ID or notarization ticket. For an explicitly
+requested Developer ID build, set `SIGN_IDENTITY` to the maintainer's certificate.
+The repository does not store certificates or Apple credentials. Notarization
+requires the maintainer's account, successful notary submission, stapling and
+repackaging before calculating the final checksum. Do not remove quarantine or
+disable macOS security protections as a substitute.
+
+## Before any future release
+
+After user acceptance, separately review and approve:
+
+1. Live Codex account sign-in/model/quota behavior and desktop Computer Use limits.
+2. Model/source switching, long histories/compaction and Local search limitations.
+3. Migration rollback instructions and the retained bundle/data identifiers.
+4. Publication of the core commit to the maintainer's fork and the matching app pin.
+5. Product-name, ZIP/application path, version, cask and release-workflow changes.
+6. Immutable tags/assets, signatures, checksum and clean-host installation tests.
+
+The historical `release.yml`, cask updater and Homebrew tests have **not** been
+used to publish this branch. They must be reviewed for the renamed product before
+release. Keeping them in the repository is not publication approval.

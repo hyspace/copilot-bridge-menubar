@@ -1,78 +1,74 @@
-# Verification
+# Verification and acceptance boundaries
 
-## Runtime coverage
+The local build's `build/acceptance.md` is the run-specific evidence record: source
+revisions, test counts, artifact paths/checksums and known limitations. Do not infer
+live-account support from a mock or from an upstream HTTP 200.
 
-- Native build produces an arm64 `.app` and arm64 standalone backend.
-- `codesign --verify --deep --strict` passes for the ad-hoc-signed local app.
-- The executable version matches the release tag, and the bundle records the
-  exact CLI submodule SHA.
-- CLI fork suite: **356 tests passed**.
-- App native suite: **84 tests passed** (configuration/accounting, real owned
-  process lifecycle against a fake backend, and offscreen rendering of our own UI).
-- App/CLI event contract test passes.
-- Backend suite: **18 tests passed**, including lossless Codex TOML planning.
-- **23 configuration transaction tests** cover exact/missing/empty-file restore,
-  unrelated edits, read-only files, symlinks/hard links, backup/manifest integrity,
-  OS locking, concurrent writes before and after swap, crash recovery, manual
-  Bridge adoption and private bounded planner IPC. They also run against the
-  actual signed, bundled configuration helper.
-- Staged CLI stream regression suite: **34 tests passed**.
-- Fake GitHub auth: pending → success, denial, private credential file, natural
-  one-shot process exit.
-- Compiled backend integration: **108 fake model requests**, keyless access,
-  model catalog, billing-only/zero/missing charges, 413 and stream-interruption accounting, conflicting listener
-  handling and parent-death cleanup.
-- Usage regression tests include 700K-character completion payloads, bounded
-  oversized-frame rejection, sibling usage fields, final Chat usage-only chunks,
-  cancellation after a terminal event, exact counter arithmetic and inclusive
-  native Anthropic cache accounting. No live account is used for these tests.
-- Native lifecycle tests include repeated restarts and FD-count bounds, genuine
-  occupied-port protection, TIME_WAIT reuse, SIGTERM-ignoring owned child cleanup,
-  auth-init deadlines and final auth-event draining.
-- Forged stdout lines without the per-launch channel token cannot alter auth state.
-- Activity tests cover daylight-saving transitions, daily aggregation, cache
-  accounting, old database migration, quota persistence and out-of-order snapshots.
-- Failed quota refreshes preserve the original balance timestamp. Tooltip tests
-  verify token counts and request credit costs independently of account balances.
-- Pointer sweeps across every row and column cover tile gutters, boundaries and
-  future-date exclusion without changing visual dimensions.
-- Billing tests cover old events/databases, zero versus unknown, malformed fields,
-  fractional units, duplicate IDs, retries and independent token/billing collection.
-- Offscreen previews cover the English interface in light and dark appearance.
-- Pointer click events verify empty button edges, selected/unselected tabs,
-  disclosure headers, toggle labels and disabled actions in an offscreen window.
-  No global mouse events or screen captures are used. Hover/pressed feedback
-  state is tested independently; system hover transitions require a real pointer.
-- Quota presentation tests cover reported/derived/unknown/zero/unlimited amounts
-  and invalid percentages. Pixel checks verify gray-left/green-right bars in both
-  appearances. Remaining-percentage tests preserve an exact-amount tooltip.
-  Menu-bar icon tests enforce template rendering and the app mark's hollow nodes.
-- All tests use temporary HOME / fake credentials and non-4142 ports. The existing
-  real bridge is not taken over, stopped, restarted or sent model requests.
+## Four separate evidence levels
 
-## Package checks
+1. **Unit/contract fixtures:** routing, auth lifecycle, metadata, event framing,
+   search evidence rules, namespace restoration, source usage, migrations and config
+   recovery. These establish implementation behavior, not a subscription entitlement.
+2. **Live local API:** opt-in scripts in the core send synthetic text/functions,
+   red/blue test images, a synthetic tool-result screenshot and a freeform patch.
+   They check lifecycle/usage/IDs and client disconnect. No user screenshot or real
+   workspace content is sent. No file patch is executed by that direct API suite.
+3. **Real Codex engine:** an opt-in harness uses an isolated temporary `CODEX_HOME`
+   and synthetic read-only workspace. It proves a supplied file tool executes and
+   its result returns through the gateway, including Codex's default tool list.
+   This is test infrastructure, not the production inference architecture.
+4. **Full desktop/account acceptance:** real Codex subscription, browser/device
+   login through the packaged app, account quotas, long tasks/compaction, and desktop
+   Computer Use must be tested explicitly. The first three levels are not a claim
+   that every Codex App feature or model has the same quality as the official stack.
 
-- `scripts/test-cask.py` checks Ruby syntax, package metadata, checksum immutability,
-  rejected invalid inputs, atomic updates and downgrade prevention, entirely offline.
-- `scripts/test-english.py` checks owned interface strings, help and documentation.
-- `scripts/test-icon.py` validates the macOS icon container and all ten standard/
-  Retina images. Build checks verify that the application declares and bundles it.
-- `scripts/verify-app.py` checks a real app bundle, version, arm64 executables,
-  code signatures and recorded backend revision. It runs only `--version`, never
-  the UI or model service.
-- `scripts/test-homebrew.sh` installs from the public tap on a clean macOS host.
-  It verifies `/Applications/Copilot Bridge.app` is the actual application rather
-  than a symlink, and that an existing listener on port 4142 is unchanged.
-- Installation does not modify settings, register a login service, strip quarantine
-  attributes or disable macOS security checks.
+## Current local findings
 
-## CI and release evidence
+The synthetic local checks and isolated Codex file-tool task passed. The service
+reported a runtime context that changed while its model ID stayed the same, validating
+why discovery uses a capability fingerprint rather than a hardcoded model table.
 
-The [CI workflow](https://github.com/hyspace/copilot-bridge-menubar/actions/workflows/ci.yml)
-runs runtime tests and packages the app.
-The [installation workflow](https://github.com/hyspace/copilot-bridge-menubar/actions/workflows/homebrew.yml)
-checks the published app independently.
-The [release workflow](https://github.com/hyspace/copilot-bridge-menubar/actions/workflows/release.yml)
-tests, packages, publishes checksums, updates Homebrew metadata and verifies
-installation. See the matching workflow run and checksum file for each
-[published release](https://github.com/hyspace/copilot-bridge-menubar/releases).
+Studio-native search did **not** return paired executed-tool evidence on the tested
+endpoint, even with its documented search-only selection/event header. Plain text,
+URLs and XML-like tool markup were rejected as evidence. The guarded adapter keeps
+ordinary coding usable and reports an explicit error when an unavailable search is
+invoked. Codex's default cached-only search cannot be silently turned into live
+Studio search. A usable local native-search path is still an acceptance limitation.
+
+**Not verified:** a live subscribed Codex account, full desktop Computer Use, immediate
+server/GPU cancellation, every auxiliary desktop endpoint, long-running cross-provider
+history/compaction, or parity of model quality. Opaque history is deliberately
+rejected when the selected provider cannot read it.
+
+## Repeatable local checks
+
+```sh
+(cd vendor/copilot-bridge && bun test && bun run typecheck)
+bun test backend
+swift test --disable-sandbox
+python3 scripts/test-english.py
+python3 scripts/test-icon.py
+python3 scripts/build-backend.py
+python3 scripts/test-auth.py
+python3 scripts/integration-test.py
+```
+
+After packaging, run `verify-app.py` and the config suite with
+`CBM_CONFIG_TEST_BINARY` pointing at the packaged helper. These checks use temporary
+homes/fake credentials and ephemeral ports, not the user's live service. UI tests
+render only this app's own hidden/offscreen views; they do not capture the desktop.
+
+The existing regression suite retains Copilot retry accounting, zero/missing billing,
+large final usage frames, sibling counters, Chat usage tails, cancellation, 413
+responses and source-owned authentication. Native tests retain exact/missing/empty
+config restoration, concurrent writes, corrupt snapshots/manifests, OS locking,
+crash recovery, safe model-selection restore, process ownership, button edges,
+gutter hover coverage and icon template behavior.
+
+## Local package only
+
+The artifact must contain arm64 native/backend executables, the app icon, license
+notices and exact recorded source revisions. Ad-hoc signature verification does not
+mean Apple notarization. Do not run the historical release or Homebrew-installation
+scripts for this acceptance build. No public artifact, cask or existing installation
+is changed by verification.

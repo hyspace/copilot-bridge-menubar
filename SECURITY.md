@@ -10,8 +10,11 @@ LAN mode intentionally has no access-key requirement or inbound authentication.
 Use trusted networks only: plain HTTP does not prevent eavesdropping or usage by
 other devices on that network. Do not expose it with Internet port forwarding.
 
-The menu app never asks for your GitHub password or OpenAI token. Device login
-must happen at `https://github.com/login/device`. The Codex App routing switch
+The menu app never asks for your GitHub password or OpenAI token. GitHub device login
+happens at `https://github.com/login/device`. Independent Codex authorization uses
+OpenAI's HTTPS authorization pages via Pi OAuth. Tokens are stored in the app's own
+Keychain service and transported to the backend only over private stdio. Local API
+keys are endpoint-bound and must be re-entered for a changed endpoint. The Codex App routing switch
 keeps OpenAI sign-in enabled and does not read or write `auth.json`.
 It does not add a LAN access key.
 

@@ -50,7 +50,7 @@ describe("lossless Codex App config plans", () => {
     const changed = enable('model = "test"\n');
     for (const edited of [
       changed.text.replace('model_provider = "copilot_bridge_app"', 'model_provider = "other"'),
-      changed.text.replace('name = "Copilot Bridge"', 'name = "Edited"'),
+      changed.text.replace('name = "Codex Bridge"', 'name = "Edited"'),
       changed.text.replace("requires_openai_auth = true", "requires_openai_auth = false"),
       changed.text.replace(changed.plan.block, ""),
       changed.text + '\n[model_providers.copilot_bridge_app.http_headers]\nx = "edited"\n',
@@ -60,6 +60,30 @@ describe("lossless Codex App config plans", () => {
     const definition = '[model_providers.custom]\nname="Original"\n';
     const changed = enable('model_provider="custom"\n' + definition);
     expect(() => restore(changed.text.replace(definition, ""), changed.plan)).toThrow("previous provider definition");
+  });
+  test("restores a source-qualified Bridge model from the verified baseline only", () => {
+    const before = 'model = "original" # keep\nmodel_reasoning_effort = "high"\n';
+    const changed = enable(before);
+    const edited = changed.text.replace('"original"', '"local/org/model"') + '\n[projects."/new"]\ntrust_level="trusted"\n';
+    expect(() => restore(edited, changed.plan)).toThrow("verified pre-Bridge");
+    const result = planConfig({ action: "disable", text: edited, port: 4142, session: changed.plan, originalText: before }).text;
+    expect(result).toContain('model = "original" # keep');
+    expect(result).toContain('model_reasoning_effort = "high"');
+    expect(result).toContain('[projects."/new"]');
+    expect(result).not.toContain("local/org/model");
+  });
+  test("a previously absent model returns to the original provider's default", () => {
+    const changed = enable("");
+    const edited = 'model="copilot/same-model"\n' + changed.text;
+    const result = planConfig({ action: "disable", text: edited, port: 4142, session: changed.plan, originalText: "" }).text;
+    expect((Bun.TOML.parse(result) as any).model).toBeUndefined();
+  });
+  test("an original custom provider's own slash-qualified model is restored verbatim", () => {
+    const before = 'model_provider="original"\nmodel="local/custom-provider-model"\n';
+    const changed = enable(before);
+    const text = changed.text.replace("local/custom-provider-model", "copilot/another");
+    const result = planConfig({ action: "disable", text, port: 4142, session: changed.plan, originalText: before }).text;
+    expect(result).toBe(before);
   });
   test("rejects duplicate keys, invalid TOML and reserved data without leaking input", () => {
     for (const text of [

@@ -2,8 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>CFBundleIdentifier</key><string>com.hyspace.copilot-bridge-menubar</string>
-  <key>CFBundleName</key><string>Copilot Bridge</string>
-  <key>CFBundleDisplayName</key><string>Copilot Bridge</string>
+  <key>CFBundleName</key><string>Codex Bridge</string>
+  <key>CFBundleDisplayName</key><string>Codex Bridge</string>
   <key>CFBundleExecutable</key><string>CopilotBridgeMenuBar</string>
   <key>CFBundleIconFile</key><string>AppIcon.icns</string>
   <key>CFBundlePackageType</key><string>APPL</string>

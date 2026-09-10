@@ -18,7 +18,40 @@ public struct BridgeSettings: Codable, Equatable {
     public var vsCodeVersion = ""
     public var startOnLaunch = false
     public var automaticRestart = true
+    public var codexEnabled = true
+    public var copilotEnabled = true
+    public var localEnabled = false
+    public var localURL = ""
+    public var localRequiresKey = false
     public init() {}
+    private enum CodingKeys: String, CodingKey {
+        case scope, port, model, debug, rateLimitSeconds, waitForRateLimit, autoMode, accountType
+        case upstreamURL, proxyURL, noProxy, vsCodeVersion, startOnLaunch, automaticRestart
+        case codexEnabled, copilotEnabled, localEnabled, localURL, localRequiresKey
+    }
+    public init(from decoder: Decoder) throws {
+        self.init()
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        scope = try c.decodeIfPresent(NetworkScope.self, forKey: .scope) ?? scope
+        port = try c.decodeIfPresent(Int.self, forKey: .port) ?? port
+        model = try c.decodeIfPresent(String.self, forKey: .model) ?? model
+        debug = try c.decodeIfPresent(Bool.self, forKey: .debug) ?? debug
+        rateLimitSeconds = try c.decodeIfPresent(Int.self, forKey: .rateLimitSeconds) ?? rateLimitSeconds
+        waitForRateLimit = try c.decodeIfPresent(Bool.self, forKey: .waitForRateLimit) ?? waitForRateLimit
+        autoMode = try c.decodeIfPresent(Bool.self, forKey: .autoMode) ?? autoMode
+        accountType = try c.decodeIfPresent(AccountType.self, forKey: .accountType) ?? accountType
+        upstreamURL = try c.decodeIfPresent(String.self, forKey: .upstreamURL) ?? upstreamURL
+        proxyURL = try c.decodeIfPresent(String.self, forKey: .proxyURL) ?? proxyURL
+        noProxy = try c.decodeIfPresent(String.self, forKey: .noProxy) ?? noProxy
+        vsCodeVersion = try c.decodeIfPresent(String.self, forKey: .vsCodeVersion) ?? vsCodeVersion
+        startOnLaunch = try c.decodeIfPresent(Bool.self, forKey: .startOnLaunch) ?? startOnLaunch
+        automaticRestart = try c.decodeIfPresent(Bool.self, forKey: .automaticRestart) ?? automaticRestart
+        codexEnabled = try c.decodeIfPresent(Bool.self, forKey: .codexEnabled) ?? codexEnabled
+        copilotEnabled = try c.decodeIfPresent(Bool.self, forKey: .copilotEnabled) ?? copilotEnabled
+        localEnabled = try c.decodeIfPresent(Bool.self, forKey: .localEnabled) ?? localEnabled
+        localURL = try c.decodeIfPresent(String.self, forKey: .localURL) ?? localURL
+        localRequiresKey = try c.decodeIfPresent(Bool.self, forKey: .localRequiresKey) ?? localRequiresKey
+    }
     public var host: String { scope == .local ? "127.0.0.1" : "0.0.0.0" }
 
     public func validated() throws -> Self {
@@ -40,11 +73,21 @@ public struct BridgeSettings: Codable, Equatable {
                 throw BridgeError.message("Use an HTTP(S) proxy URL without embedded credentials.")
             }
         }
+        if localEnabled || !localURL.isEmpty {
+            guard let url = URL(string: localURL), ["http", "https"].contains(url.scheme ?? ""),
+                  url.host != nil, url.user == nil, url.password == nil,
+                  url.query == nil, url.fragment == nil, localURL.count <= 2048 else {
+                throw BridgeError.message("Use a complete HTTP(S) local API address without credentials, a query or a fragment.")
+            }
+        }
         return self
     }
 
-    public func arguments(authOnly: Bool = false) -> [String] {
+    public func arguments(authOnly: Bool = false, gatewaySettingsPath: String? = nil) -> [String] {
         if authOnly { return ["auth", "--host", "127.0.0.1", "--port", String(port)] }
+        if let gatewaySettingsPath {
+            return ["gateway", "--host", host, "--port", String(port), "--settings", gatewaySettingsPath]
+        }
         var args = ["start", "--host", host, "--port", String(port),
                     "--no-codex-setup", "--no-claude-setup", "--no-prompt"]
         if !model.isEmpty { args += ["--model", model] }
@@ -53,6 +96,20 @@ public struct BridgeSettings: Codable, Equatable {
         if waitForRateLimit { args += ["--wait"] }
         if autoMode { args += ["--auto"] }
         return args
+    }
+
+    public func writeGatewaySettings(root: URL) throws -> URL {
+        try AppPaths.prepare(root)
+        let path = root.appendingPathComponent("gateway-settings.json")
+        let data = try JSONSerialization.data(withJSONObject: [
+            "codexEnabled": codexEnabled, "copilotEnabled": copilotEnabled,
+            "localEnabled": localEnabled, "localURL": localURL, "localRequiresKey": localRequiresKey,
+            "copilotModelOverride": model, "debug": debug,
+            "rateLimitSeconds": rateLimitSeconds, "rateLimitWait": waitForRateLimit, "autoMode": autoMode,
+        ], options: [.sortedKeys])
+        try data.write(to: path, options: [.atomic])
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path.path)
+        return path
     }
 
     public func environment(inheriting source: [String: String], home: String,

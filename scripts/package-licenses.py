@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import pathlib, shutil, sys
+import json, pathlib, shutil, sys
 root=pathlib.Path(__file__).resolve().parent.parent
 destination=pathlib.Path(sys.argv[1])
 destination.mkdir(parents=True,exist_ok=True)
@@ -9,6 +9,9 @@ shutil.copy(root/"THIRD_PARTY_NOTICES.md",destination/"THIRD_PARTY_NOTICES.md")
 for file in (root/"resources/licenses").glob("*"):
     if file.is_file():shutil.copy(file,destination/file.name)
 modules=(root/"vendor/copilot-bridge/node_modules").resolve()
+pi=json.loads((modules/"@earendil-works/pi-ai/package.json").read_text())
+if pi["version"] != "0.85.1":
+    raise SystemExit("Update the audited Pi source/license notice for this dependency version.")
 for package in modules.iterdir():
     candidates=list(package.iterdir()) if package.name.startswith("@") and package.is_dir() else [package]
     for candidate in candidates:

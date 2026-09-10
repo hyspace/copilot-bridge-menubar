@@ -1,210 +1,189 @@
-# Copilot Bridge Menu Bar
+# Codex Bridge
 
-<img src="docs/screenshots/app-icon.png" width="80" alt="Copilot Bridge app icon">
+<img src="docs/screenshots/app-icon.png" width="80" alt="Codex Bridge app icon">
 
-A native **Apple Silicon macOS menu-bar app** connecting **Codex App** to
-**GitHub Copilot**, powered by [Copilot Bridge](https://github.com/hyspace/copilot-bridge).
-Codex App is the only supported client. Manage its routing switch, the local
-Bridge service, GitHub authorization, token activity and credit usage.
-No Dock icon, ordinary application window, or separate Bun installation.
+A native **Apple Silicon macOS menu-bar app** that gives **Codex App** one model
+picker for **Codex subscription, GitHub Copilot, and a local Unsloth Studio API**.
+Codex App still owns the task, history, context management, tool execution and
+permissions. This is a model gateway, not a second coding agent.
+
+> **Local review build, not a published release.** The `codex/codex-bridge`
+> development branch produces `build/Codex Bridge.app` and
+> `build/Codex-Bridge-arm64.zip`. The existing Homebrew cask and public releases
+> still refer to the older Copilot-only app. Do not use them to evaluate this branch.
+> Nothing is installed, uploaded or published by the local build script.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/overview-dark.png">
-  <img src="docs/screenshots/overview.png" width="384" alt="Copilot Bridge overview with synthetic example data">
+  <img src="docs/screenshots/overview.png" width="384" alt="Codex Bridge overview with synthetic example data">
 </picture>
 
-## Install
+## Connect the sources
 
-Requires **macOS 14+ and Apple Silicon**.
+Requires macOS 14+ and Apple Silicon. No separate Bun installation is needed to
+run the packaged app. It lives in the menu bar, not the Dock.
 
-```sh
-brew tap hyspace/copilot-bridge-menubar https://github.com/hyspace/copilot-bridge-menubar
-brew install --cask hyspace/copilot-bridge-menubar/copilot-bridge-menubar
-```
+1. Review **Settings > Model sources**. Enable the sources you want. For Local,
+   enter the Unsloth API base URL, or its full `/v1/responses` URL. No model name
+   or context-window entry is required.
+2. **Start service** on a free port. An existing listener is never stopped or
+   taken over. Source discovery does not load or download a model.
+3. Expand **Codex** in Overview to connect an independent subscription account
+   using browser or device-code sign-in. The app uses Pi's OAuth implementation
+   and its own Keychain entries, not Codex App's `auth.json` or a nested CLI session.
+4. Copilot reuses the established GitHub device flow and Bridge credential cache.
+   **Settings > GitHub account > Authorize GitHub…** starts a new authorization;
+   it is not sign out. Stop this app's service and any standalone Bridge before
+   replacing that shared GitHub authorization.
+5. If the local endpoint requires a key, save/restart after configuring its URL,
+   then use **Store key**. Keys are bound to the exact normalized endpoint in
+   Keychain; they do not follow a change to another host or port.
+6. Turn on **Use in Codex**, then fully quit and reopen **Codex App**. Select a
+   source-labelled model there. This app does not restart Codex or its tasks.
 
-Open **Copilot Bridge** from Applications. The app is installed at
-`/Applications/Copilot Bridge.app`. Click its menu-bar icon, review Settings, then
-choose **Start service**, enable **Use in Codex**, then
-**restart Codex App**. The backend does not start automatically on first launch.
-If another service already uses port 4142, choose a different port.
-The app never takes over or terminates an existing CLI process.
+Source IDs are unambiguous: `codex/<model>`, `copilot/<model>`, and `local/<model>`.
+A missing source/model does not fall back to another account or billing source.
+Bare historical model names work only in a Copilot-only catalog, or when a task
+has already established a source. Unknown background routes fail explicitly.
 
-If Homebrew asks you to trust this package before adding the tap, run
-`brew trust --cask hyspace/copilot-bridge-menubar/copilot-bridge-menubar`, then retry.
+## Local capabilities and limits
 
-You can also download `Copilot-Bridge-arm64.zip` from Releases and move the
-extracted app to Applications. Public builds are ad-hoc signed, not Apple
-Developer ID signed or notarized. If macOS blocks a downloaded copy, build from
-source or review its origin before using the system's **Privacy & Security >
-Open Anyway** flow. The project does not disable Gatekeeper or remove quarantine.
+Unsloth discovery uses its public models/props APIs and publishes loaded
+conversational models with a reported **runtime context window**. ASR, image,
+unloaded, and window-unknown models are excluded. Vision, tool and parallel-call
+badges describe server declarations, not a quality guarantee. Runtime window,
+quantization/build or capability changes invalidate the previous fingerprint.
+Refresh/reopen Codex App when its cached picker is stale.
 
-Quit the app before updating:
+The local adapter preserves function namespaces and custom `apply_patch`, image
+input, and images in tool results. Workstation tools run in Codex App, **not on
+the Unsloth machine**. Readable reasoning/search history is retained explicitly;
+opaque/encrypted history and unsupported file attachments fail rather than being
+dropped. Start a new task when moving a task with provider-private history.
 
-```sh
-brew update
-brew upgrade --cask hyspace/copilot-bridge-menubar/copilot-bridge-menubar
-```
+Search is provider-specific:
 
-Optional startup behavior is controlled by **Open at login** and
-**Start service when app opens** in Settings.
+- **Codex:** native official Responses tools are forwarded intact.
+- **Copilot:** its existing search and model-specific compatibility pipeline is
+  retained, including its explicit backend configuration.
+- **Local:** a guarded hosted-tool adapter asks Studio to run only its native
+  `web_search`. It requires real `tool_start`/`tool_end` evidence; generated URLs
+  or textual tool markup are not counted as a successful search. No external
+  search subscription is selected automatically. Cached-only search and unsupported
+  location/domain filters fail explicitly when invoked; they are not changed to
+  unrestricted live search. Ordinary tasks still work with Codex's default tool list.
 
-## Activity and credits
+**Acceptance status is not universal compatibility.** The local synthetic suite
+covers streaming, function round-trips, vision, tool-result screenshots, custom
+patches and client cancellation. A real isolated Codex engine also performs a
+read-only file-tool task through the gateway. Full desktop Computer Use, immediate
+GPU cancellation, and a live subscribed Codex account remain separate acceptance
+checks. The tested local service did not return executed native-search results.
+See [verification](docs/verification.md) and the local build's acceptance report.
 
-- The contribution-style grid shows **26 weeks** of recorded token activity,
-  grouped by the local date of each upstream request attempt.
-- Darker green means more reported **input + output tokens**. Cached tokens are
-  already part of input and are not added twice.
-- Hover, click or keyboard-focus a day to see its token totals and **credits used**.
-  Hover coverage includes the gaps between tiles without changing their appearance.
-- Request charges come directly from `usage.copilot_usage.total_nano_aiu`, divided
-  by 1,000,000,000. They are **not estimated from token counts or balance changes**.
-- Repeated stream snapshots are not added twice. Each real retry is recorded
-  separately, and duplicate event IDs are ignored.
-- An explicit zero is a known zero. Missing billing says **Credits unreported**;
-  partial totals show how many requests included billing. Old token history is
-  retained, but previously discarded billing fields cannot be recovered.
-- A dashed tile border marks missing/partial token or billing data. The detail
-  line reports **token coverage and credit coverage separately**.
+## Activity and account quotas
 
-**Account balance** remains a separate card, queried from GitHub's quota API.
-It is account-wide, whereas the activity grid covers requests handled by this app.
-The card shows **credits used on the left** and **remaining percentage on the right**.
-Hover the percentage for the exact remaining credit amount.
-The bar follows the same order: gray used quota, then green remaining quota.
-Reported usage is preferred; when only a limit and remaining quota are available,
-the calculated used amount is explicitly labeled **derived**. Unknown is not zero.
-**Refresh usage** updates these account figures, not authorization.
-Failed balance refreshes preserve the original observation timestamp. Legacy
-premium-interaction quotas keep their own labels. See [activity data](docs/activity.md).
+One green **26-week heatmap** sums recorded input + output tokens across all three
+sources. Cached input is not added twice. Hover, focus or select a day for the
+total and **Codex / Copilot / Local** breakdown. Visual tile gaps remain, but hover
+coverage has no gaps. Missing/partial counters are labelled, not measured as zero.
 
-**Settings > GitHub account > Authorize GitHub…** starts a fresh device
-authorization. Authorize again or select a different account on GitHub; approving
-access replaces the shared CLI credential cache. This is not a sign-out action.
-Stop the app's service and any standalone CLI service before changing authorization.
-The app only reports whether cached credentials exist, not a verified account identity.
+The three compact **Sources** rows replace the large single-account credit card.
+Expand a row for details. Codex quota windows use percentages and reset times;
+Copilot uses the returned credit/premium-interaction units; Local has no
+subscription balance. Account quotas include other clients; the heatmap includes
+only requests observed by this Bridge. Credits from different providers are
+never summed or converted into dollars. Cached quotas retain their observation
+time and are not shown as freshly connected data after the service stops.
 
-## Settings
+Copilot's actual request billing (`total_nano_aiu / 1,000,000,000`) continues to be
+stored separately, but is no longer mixed into the all-source heatmap's details.
+See [activity and migration](docs/activity.md).
 
-- Local-only (`127.0.0.1`) or LAN (`0.0.0.0`) access, with a configurable port.
-- Start, stop and restart only the app's own backend process.
-- Explicit GitHub device authorization, sharing the CLI credential cache.
-- Model override, Auto mode, request interval and rate-limit waiting.
-- Account type, HTTP(S) proxy, proxy exclusions, custom upstream and compatibility version.
-- Bounded diagnostic logs, automatic crash retries and optional login startup.
-- A transactional Codex App routing switch with verified backups and safe restore.
-- English interface, messages and help text.
-- Full-area buttons and tabs with hover feedback, including Quit and disclosure headers.
-- The app icon's original bridge mark in both the panel and menu bar, with
-  template tinting that follows the actual menu-bar light/dark appearance.
+## Safe configuration switching
 
-Internal service options and intentional restrictions are documented in
-[Service options](docs/service-options.md). These are implementation details,
-not support for other coding clients.
+The toggle edits the root provider and its own managed block in Codex's
+`config.toml`, with verified private backups, a journal, file locking and atomic
+replacement. It retains `requires_openai_auth = true` and disables unsupported
+WebSockets. It does not read/write Codex authentication files.
 
-The default service behavior is equivalent to:
+Turning off restores the previous provider. Ordinary unrelated model/config edits
+are preserved. A **Bridge-qualified** model selected while enabled is restored
+from the verified pre-Bridge snapshot (or removed if there was no old model), so
+`local/...` is not accidentally sent to OpenAI after disabling the gateway.
+Edits to managed fields, invalid TOML or corrupt backups fail closed.
 
-```sh
-env -u COPILOT_TOKEN -u COPILOT_BASE_URL copilot-bridge start \
-  --host 127.0.0.1 --port 4142 \
-  --no-codex-setup --no-claude-setup --no-prompt
-```
+The resolved target and **Open backups** are in Settings. Routing persists when
+Bridge quits; switching it off is an explicit operation. See
+[configuration and recovery](docs/configuration.md).
 
-The app uses its bundled standalone backend, not a user shell. Inherited
-`COPILOT_TOKEN` and `COPILOT_BASE_URL` are cleared so the CLI can obtain and refresh
-its own credentials. A custom upstream is set only when explicitly configured.
+## Privacy and lifecycle
 
-## Codex App configuration
-
-Use **Use in Codex** in Overview, or **Use Copilot Bridge in Codex** in Settings. No configuration
-copying or manual merging is required. **Restart Codex App after each switch**;
-running tasks are not restarted or switched by this app.
-
-- **On:** save a private, verified full backup, select an app-owned provider and
-  point it to this Mac's Bridge service. OpenAI sign-in stays enabled.
-- **Off:** restore the previous provider and remove only the app-owned block.
-  Unrelated edits made while enabled, including model selection and project
-  settings, are preserved. Changes to managed fields cause a conflict instead
-  of being overwritten.
-- **Existing manual Bridge configuration:** no pre-Bridge restore point can be
-  assumed. The UI explicitly explains that turning off makes a full backup and
-  selects Codex's default provider. Existing user-owned provider tables are kept.
-  Overview's **Codex routing** button opens that explanation in Settings first.
-- **Open backups** in Settings provides access to the retained restore points.
-
-The switch edits `~/.codex/config.toml`, or the home selected by an absolute
-`CODEX_HOME` when Bridge starts. It never reads or writes `auth.json`.
-Model choice and reasoning preferences are not rewritten. To change the service
-port, switch routing off, change/save the port, then switch routing on again.
-The toggle always uses loopback, even when the server allows LAN access.
-
-Routing persists when Bridge quits; it is never silently restored on quit,
-launch or upgrade. Other Codex clients sharing this home can also read the same
-user config, although only Codex App is supported. See
-[Configuration switching and recovery](docs/configuration.md).
-
-## Safety and local data
-
-**LAN mode has no incoming API key and uses unencrypted HTTP. Use trusted
-networks only. Do not expose it to the internet or configure port forwarding.**
-
-Settings, daily/model token and billing totals, and quota snapshots are stored locally.
-No prompt or response database is created. Aggregates are retained for 730 days,
-deduplication IDs for two days, and logs for up to four files of approximately
-2 MB each. Only the latest 200 log lines are held in the interface.
+- No service, task or configuration is changed by building or installing the app.
+- Start/stop/restart controls act only on the app's own child process.
+- Optional startup uses the normal macOS login-item setting. First launch does
+  not automatically start the backend.
+- **LAN mode is intentionally keyless and uses plain HTTP.** Use a trusted network
+  only; never expose it to the internet. Any device on that LAN can consume enabled
+  account quotas. Private management routes require a per-process secret, and
+  browser-origin model requests are rejected.
+- A local API configured with HTTP also sends its traffic/key without TLS. Use
+  HTTPS whenever it leaves a trusted network.
+- No prompts, screenshots or generated text are written to the usage database.
+  Logs are bounded/redacted, but review diagnostics before sharing them.
+- Repository names, bundle ID, executable name, data directory and historical
+  config ownership markers intentionally stay compatible with existing installs.
 
 ```text
 ~/Library/Application Support/CopilotBridgeMenuBar/
-  settings.json       # App settings; no account credentials
-  usage.sqlite        # Request tokens, billing totals and quota observations
-  Logs/bridge*.log    # Rotating diagnostics
-  CodexConfig/        # Private full-config backups and transaction recovery state
-~/.local/share/copilot-bridge/github_token  # CLI-managed credentials, mode 0600
+  settings.json                 # non-secret app preferences
+  gateway-settings.json         # non-secret child settings
+  usage.sqlite                  # provider/day/model aggregates and quota snapshots
+  usage.sqlite.before-providers-v2*.sqlite  # immutable migration snapshots
+  credentials.lock              # OS lock, not credentials
+  Logs/bridge*.log               # bounded diagnostics
+  CodexConfig/                  # private config backups and recovery journal
+~/.local/share/copilot-bridge/github_token  # existing GitHub credential cache
+macOS Keychain                  # independent Codex OAuth and endpoint-bound local key
 ```
 
-Configuration backups may contain credentials from existing settings. **Do not
-upload backups or attach them to public issues.** Credentials are redacted in
-service logs, but review debug logs before sharing them: upstream
-errors may contain application-specific information. GitHub's internal quota
-interface may change; missing values are shown as unknown, never invented.
-Credit units are not converted into dollars.
+Configuration backups can contain pre-existing secrets. **Never upload backups,
+local reports, credentials or personal diagnostic logs.** Migration snapshots and
+legacy tables are retained for recovery; ordinary active aggregates retain 730 days.
 
-## Development
+## Build and test locally
+
+Use the recorded core submodule commit. A dirty or unrecorded submodule is rejected;
+building never rewinds it. Local review commits need not be pushed.
 
 ```sh
-git clone --recurse-submodules https://github.com/hyspace/copilot-bridge-menubar.git
-cd copilot-bridge-menubar
-cd vendor/copilot-bridge && bun install --frozen-lockfile && cd ../..
+(cd vendor/copilot-bridge && bun install --frozen-lockfile --ignore-scripts)
+bun vendor/copilot-bridge/node_modules/typescript/bin/tsc --noEmit
 bun test backend
+(cd vendor/copilot-bridge && bun test && bun run typecheck)
 swift test --disable-sandbox
-python3 scripts/test-cask.py
 python3 scripts/test-english.py
 python3 scripts/test-icon.py
-python3 scripts/build-backend.py
-python3 scripts/test-auth.py
-python3 scripts/integration-test.py
 bash scripts/build-app.sh
+python3 scripts/verify-app.py --app 'build/Codex Bridge.app' --version 0.5.0
 ```
 
-The original app icon is generated from vector geometry in
-`scripts/generate-icon.swift`; the bundled `AppIcon.icns` includes standard and
-Retina sizes. To regenerate it, run `swift scripts/generate-icon.swift build/icon`
-and copy the resulting icon into `resources/AppIcon.icns`.
+Build requirements: Apple Silicon Mac, Swift 6+, Python 3, Bun 1.4.1. Native targets
+have no remote package dependencies. The icon retains the app's bridge mark and
+menu-bar template tinting for light/dark appearances. Local signatures are ad-hoc;
+Apple notarization is **not** claimed. Security protections are not disabled.
 
-Build requirements: Apple Silicon Mac, Swift 6+, Python 3, and Bun 1.4.1.
-The native targets have no remote package dependencies. The CLI is pinned by Git
-submodule and its JavaScript dependencies by `bun.lock`. Builds copy the pinned
-source without patching it or restarting an existing service.
+Fixture tests use temporary homes and non-4142 ports. Live local tests are opt-in
+scripts in the core checkout; they require an explicitly supplied API URL and
+send synthetic data only. Do not run release/Homebrew installation scripts during
+local acceptance.
 
-Tests use temporary HOME directories, synthetic data and fake upstreams on
-random non-4142 ports. They do not consume real model credits or read real
-credentials. UI previews are rendered offscreen; the README example is synthetic.
-
-[Architecture](docs/architecture.md) · [Activity data](docs/activity.md) ·
-[Releases](docs/releasing.md) · [Verification](docs/verification.md) ·
-[Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
+[Architecture](docs/architecture.md) · [Activity](docs/activity.md) ·
+[Configuration](docs/configuration.md) · [Verification](docs/verification.md) ·
+[Release boundary](docs/releasing.md) · [Security](SECURITY.md)
 
 ## License
 
-MIT © 2026 hyspace. The pinned CLI is MIT © betaHi and contributors.
-Bundled runtime/dependencies retain their own licenses; see
-`THIRD_PARTY_NOTICES.md` and the license files packaged in the app.
+MIT © 2026 hyspace. Copilot Bridge core is based on MIT-licensed work by betaHi and
+contributors. Pi OAuth is MIT-licensed. Bundled runtime/dependencies retain their
+licenses; see `THIRD_PARTY_NOTICES.md` and the packaged notices.

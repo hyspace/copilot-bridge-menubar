@@ -104,6 +104,23 @@ final class CodexConfigTests: XCTestCase {
         XCTAssertTrue(restored.contains("model_provider = \"openai\""))
         XCTAssertFalse(restored.contains("copilot_bridge_app"))
     }
+    func testQualifiedModelRestoresFromVerifiedBaselineWithoutLosingOtherEdits() throws {
+        for model in ["local/org/model", "codex/official-model", "copilot/another-model"] {
+            let f = try fixture()
+            try f.manager.setEnabled(true, port: 4142)
+            let edited = try contents(f.config).replacingOccurrences(of: "\"original\"", with: "\"\(model)\"")
+                + "\n[projects.\"/new/project\"]\ntrust_level = \"trusted\"\n"
+            try Data(edited.utf8).write(to: f.config)
+            let reopened = f.reopened()
+            XCTAssertTrue(reopened.status(port: 4142).canChange)
+            XCTAssertEqual(try contents(f.config), edited, "Status must not rewrite the selected model")
+            try reopened.setEnabled(false, port: 4142)
+            let restored = try contents(f.config)
+            XCTAssertTrue(restored.contains("\"original\""))
+            XCTAssertTrue(restored.contains("/new/project"))
+            XCTAssertFalse(restored.contains(model))
+        }
+    }
     func testUserChangesToOwnedFieldsAreNeverOverwritten() throws {
         let f = try fixture()
         try f.manager.setEnabled(true, port: 4142)

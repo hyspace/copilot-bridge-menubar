@@ -123,7 +123,7 @@ final class PanelInteractionTests: XCTestCase {
                 let image = StatusItemIcon.make()
                 XCTAssertNotNil(image)
                 XCTAssertEqual(image?.isTemplate, true)
-                XCTAssertEqual(image?.accessibilityDescription, "Copilot Bridge")
+                XCTAssertEqual(image?.accessibilityDescription, "Codex Bridge")
             }
         }
     }

@@ -43,7 +43,7 @@ public enum StatusItemIcon {
             }
             return true
         }
-        image.accessibilityDescription = "Copilot Bridge"
+        image.accessibilityDescription = "Codex Bridge"
         // AppKit adapts to the actual menu-bar background, not just system theme.
         image.isTemplate = true
         return image

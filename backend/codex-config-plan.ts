@@ -18,6 +18,8 @@ export interface ConfigPlanRequest {
   port: number;
   token?: string;
   session?: ManagedConfigPlan;
+  /** Verified pre-enable snapshot, supplied over private IPC for model restoration. */
+  originalText?: string;
 }
 type Statement = { start: number; end: number; text: string };
 function fail(message: string): never { throw new Error(message); }
@@ -62,17 +64,35 @@ function statements(text: string): Statement[] {
   return result;
 }
 
-function selector(text: string): Statement | undefined {
+function selector(text: string, key = "model_provider"): Statement | undefined {
   for (const statement of statements(text)) {
     const trimmed = statement.text.trim();
     if (trimmed.startsWith("[")) break; // Subsequent assignments belong to tables.
     if (!trimmed || trimmed.startsWith("#")) continue;
     const part = parse(statement.text);
-    if (Object.hasOwn(part, "model_provider")) {
-      if (typeof part.model_provider !== "string") fail("Codex model_provider must be a string.");
+    if (Object.hasOwn(part, key)) {
+      if (typeof part[key] !== "string") fail(`Codex ${key} must be a string.`);
       return statement;
     }
   }
+}
+const gatewayModel = (model: unknown): boolean =>
+  typeof model === "string" && /^(codex|copilot|local)\//.test(model);
+
+function restoreGatewayModel(text: string, originalText: string | undefined): string {
+  const current = parse(text);
+  if (!gatewayModel(current.model)) return text;
+  if (originalText === undefined) fail("A verified pre-Bridge model snapshot is required before restoring a source-qualified model.");
+  const root = selector(text, "model");
+  if (!root) fail("Could not safely restore the model selection.");
+  parse(originalText);
+  // The verified baseline belongs to the original provider, which may itself
+  // use slashes in model IDs. Restore it verbatim instead of interpreting it.
+  const previous = selector(originalText, "model");
+  let replacement = previous?.text ?? "";
+  if (replacement && !replacement.endsWith("\n") && root.end < text.length)
+    replacement += root.text.endsWith("\r\n") ? "\r\n" : "\n";
+  return text.slice(0, root.start) + replacement + text.slice(root.end);
 }
 
 function replaceSelector(statement: string, value: string): string {
@@ -137,7 +157,7 @@ export function planConfig(request: ConfigPlanRequest): any {
   if (request.action === "legacyOff") {
     if (!legacy(parsed, port) || !root || reserved(text, parsed)) fail("The manual Bridge configuration no longer matches. No configuration was changed.");
     if (profileOverride(parsed)) fail("The selected Codex profile overrides the provider. Resolve that override before switching.");
-    const result = text.slice(0, root.start) + text.slice(root.end);
+    const result = restoreGatewayModel(text.slice(0, root.start) + text.slice(root.end), "");
     parse(result);
     return { ok: true, text: result };
   }
@@ -153,7 +173,7 @@ export function planConfig(request: ConfigPlanRequest): any {
     const block = [
       `${MARK}BEGIN ${request.token}`,
       `[model_providers.${PROVIDER}]`,
-      'name = "Copilot Bridge"',
+      'name = "Codex Bridge"',
       `base_url = "http://127.0.0.1:${port}/v1"`,
       'wire_api = "responses"',
       "supports_websockets = false",
@@ -193,6 +213,9 @@ export function planConfig(request: ConfigPlanRequest): any {
       original += current.text.endsWith("\r\n") ? "\r\n" : "\n";
     }
     result = result.slice(0, current.start) + original + result.slice(current.end);
+    // Only Bridge-qualified choices are owned by this feature. Preserve an
+    // ordinary model the user explicitly selected while Bridge was enabled.
+    result = restoreGatewayModel(result, request.originalText);
     const restored = parse(result);
     if (reserved(result, restored)) fail("Additional managed-provider settings were found. Configuration was left unchanged.");
     if (session.originalProviderDefined && !Object.hasOwn(restored.model_providers ?? {}, restored.model_provider)) {

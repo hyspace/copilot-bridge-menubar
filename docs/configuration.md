@@ -2,8 +2,8 @@
 
 ## User workflow
 
-1. Authorize GitHub and start the Bridge service.
-2. Turn on **Use in Codex** in Overview, or **Use Copilot Bridge in Codex** in Settings.
+1. Configure at least one source, connect its account if needed, and start the Bridge service.
+2. Turn on **Use in Codex** in Overview, or **Use Codex Bridge in Codex** in Settings.
 3. Fully quit and reopen **Codex App** to apply the saved route; closing its window is not a restart.
 4. To return to the previous provider, turn the switch off and restart Codex App.
 
@@ -29,9 +29,15 @@ The app changes the root `model_provider` selector and adds its own
 - Responses transport with `supports_websockets = false`;
 - `requires_openai_auth = true`, preserving OpenAI sign-in.
 
-Model selection, reasoning preferences, other providers, project settings and
-authentication files are not rewritten. Select a model available to the active
-provider in Codex App. No placeholder model is inserted.
+Enabling does not rewrite the model or reasoning preferences. Choose a
+source-qualified model in Codex App. When disabling, an ordinary unqualified
+model edit is preserved, but a Bridge-owned `codex/`, `copilot/` or `local/`
+selection is restored from the verified pre-enable snapshot. If no original model
+existed, the model selector is removed so the original provider chooses its default.
+This also works with older intact transaction manifests: the verified full snapshot,
+not newly invented ownership metadata, supplies the old model. Other providers,
+project settings, reasoning preferences and authentication files are not rewritten.
+No placeholder model is inserted.
 
 Current [OpenAI configuration documentation](https://developers.openai.com/codex/config-reference/)
 defines `openai` as the default provider and provider configuration as user-level

@@ -1,0 +1,9 @@
+Component: @earendil-works/pi-ai 0.85.1
+Repository: https://github.com/earendil-works/pi
+Published package gitHead: d981de1229ef899957bbe968bc8dcda02a21f477
+License source: https://github.com/earendil-works/pi/blob/d981de1229ef899957bbe968bc8dcda02a21f477/LICENSE
+License Git blob: b0a8e9b81083294360c69b4ec45d3d39a2b28197
+
+The published package declares MIT but does not contain its repository-root
+LICENSE. Pi-MIT.txt preserves that exact source license notice.
+Update this audited notice when changing the pinned Pi dependency.

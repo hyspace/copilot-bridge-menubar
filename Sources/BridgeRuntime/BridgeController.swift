@@ -22,6 +22,12 @@ public final class BridgeController: ObservableObject {
     @Published public private(set) var quotaDate: Date?
     @Published public private(set) var loginItemEnabled = false
     @Published public private(set) var isFetchingQuota = false
+    @Published public private(set) var gateway = GatewaySnapshot()
+    @Published public private(set) var codexQuota: CodexQuota?
+    @Published public private(set) var codexQuotaError = ""
+    @Published public private(set) var gatewayError = ""
+    @Published public private(set) var isFetchingSources = false
+    @Published public private(set) var isUpdatingProvider = false
     @Published public private(set) var servicePID: Int32?
     @Published public private(set) var codexSwitch = CodexSwitchStatus()
     @Published public private(set) var isUpdatingCodex = false
@@ -37,6 +43,14 @@ public final class BridgeController: ObservableObject {
     private var timer: Timer?
     private var healthTask: Task<Void, Never>?
     private var quotaTask: Task<Void, Never>?
+    private var sourcesTask: Task<Void, Never>?
+    private var codexQuotaTask: Task<Void, Never>?
+    private var authTask: Task<Void, Never>?
+    private var controlToken = ""
+    private var lastSourceCheck = Date.distantPast
+    private var lastCodexQuotaCheck = Date.distantPast
+    private var lastOpenedAuthURL: String?
+    private var browserLoginRequested = false
     private var restartTask: Task<Void, Never>?
     private var stopTask: Task<Void, Never>?
     private var startedAt = Date()
@@ -103,6 +117,9 @@ public final class BridgeController: ObservableObject {
             if let observation = try store?.latestQuota() {
                 quota = observation.snapshot; quotaDate = observation.observedAt
             }
+            if let data = try store?.latestProviderQuota(.codex) {
+                codexQuota = try? JSONDecoder().decode(CodexQuota.self, from: data)
+            }
             try refreshUsage(forceHistory: true)
         } catch { message = error.localizedDescription }
         loginItemEnabled = SMAppService.mainApp.status == .enabled
@@ -116,6 +133,7 @@ public final class BridgeController: ObservableObject {
     deinit {
         timer?.invalidate()
         healthTask?.cancel(); quotaTask?.cancel(); restartTask?.cancel(); stopTask?.cancel()
+        sourcesTask?.cancel(); codexQuotaTask?.cancel(); authTask?.cancel()
         readers.forEach { $0.stop() }
         session.invalidateAndCancel()
         if let service, service.isRunning { service.terminate() }
@@ -124,6 +142,10 @@ public final class BridgeController: ObservableObject {
     public var isActive: Bool { service != nil || state == .backoff }
     public var endpoint: String { "http://127.0.0.1:\((currentSettings ?? settings).port)/v1" }
     public var hasUnsavedChanges: Bool { currentSettings.map { $0 != settings } ?? false }
+    public var canStoreLocalKey: Bool {
+        state == .running && currentSettings?.localEnabled == true
+            && currentSettings?.localURL == settings.localURL && !isUpdatingProvider
+    }
     public var loginStatus: String {
         FileManager.default.fileExists(atPath: home
             .appendingPathComponent(".local/share/copilot-bridge/github_token").path)
@@ -153,14 +175,20 @@ public final class BridgeController: ObservableObject {
             let child = Process()
             let stdout = Pipe(), stderr = Pipe()
             let eventToken = UUID().uuidString + UUID().uuidString
-            let pump = try ProcessOutput(root: root, secrets: [eventToken],
+            controlToken = UUID().uuidString + UUID().uuidString
+            let pump = try ProcessOutput(root: root, secrets: [eventToken, controlToken],
                                          eventToken: eventToken)
             child.executableURL = binary
-            child.arguments = settings.arguments(authOnly: loginOnly)
+            let gatewaySettings = try settings.writeGatewaySettings(root: root)
+            child.arguments = settings.arguments(authOnly: loginOnly, gatewaySettingsPath: gatewaySettings.path)
             child.environment = settings.environment(inheriting: ProcessInfo.processInfo.environment,
                 home: home.path,
                 parentPID: ProcessInfo.processInfo.processIdentifier, instance: instance,
                 eventToken: eventToken)
+            child.environment?["CODEX_BRIDGE_CONTROL_TOKEN"] = controlToken
+            if let executable = Bundle.main.executableURL {
+                child.environment?["CODEX_BRIDGE_CREDENTIAL_HELPER"] = executable.path
+            }
             child.currentDirectoryURL = root
             child.standardInput = FileHandle.nullDevice
             child.standardOutput = stdout; child.standardError = stderr
@@ -190,6 +218,8 @@ public final class BridgeController: ObservableObject {
             service = child; servicePID = child.processIdentifier
             startedAt = Date(); lastHealth = .distantPast; unhealthyCount = 0
             lastQuotaAttempt = .distantPast
+            lastSourceCheck = .distantPast; lastCodexQuotaCheck = .distantPast
+            gateway = GatewaySnapshot(); gatewayError = ""
             state = .starting; login = nil; message = ""
         } catch {
             closePipes(); service = nil; output = nil; currentSettings = nil
@@ -202,6 +232,9 @@ public final class BridgeController: ObservableObject {
         restartTask?.cancel(); restartTask = nil
         healthTask?.cancel(); healthTask = nil
         quotaTask?.cancel(); quotaTask = nil; isFetchingQuota = false
+        sourcesTask?.cancel(); sourcesTask = nil; isFetchingSources = false
+        codexQuotaTask?.cancel(); codexQuotaTask = nil
+        authTask?.cancel(); authTask = nil; isUpdatingProvider = false
         guard let service else {
             state = .stopped
             if restart { pendingRestart = false; start() }
@@ -333,8 +366,16 @@ public final class BridgeController: ObservableObject {
         if healthTask == nil && Date().timeIntervalSince(lastHealth) >= healthInterval {
             lastHealth = Date(); checkHealth()
         }
-        if state == .running, quotaTask == nil, Date().timeIntervalSince(lastQuotaAttempt) >= 300 {
+        if state == .running, currentSettings?.copilotEnabled == true, quotaTask == nil,
+           Date().timeIntervalSince(lastQuotaAttempt) >= 300 {
             refreshQuota()
+        }
+        if state == .running, sourcesTask == nil, Date().timeIntervalSince(lastSourceCheck) >= 3 {
+            refreshSources()
+        }
+        if state == .running, gateway.codexLogin?.state == "connected", codexQuotaTask == nil,
+           Date().timeIntervalSince(lastCodexQuotaCheck) >= 300 {
+            refreshCodexQuota()
         }
     }
 
@@ -356,7 +397,126 @@ public final class BridgeController: ObservableObject {
         guard let currentSettings else { return nil }
         var request = URLRequest(url: URL(string: "http://127.0.0.1:\(currentSettings.port)\(path)")!)
         request.timeoutInterval = timeout
+        if path.hasPrefix("/bridge/") { request.setValue(controlToken, forHTTPHeaderField: "x-codex-bridge-token") }
         return request
+    }
+    public func refreshSources(force: Bool = false) {
+        if force { sendControl("/bridge/refresh") }
+        guard sourcesTask == nil, state == .running, let request = request("/bridge/status") else { return }
+        lastSourceCheck = Date(); isFetchingSources = true
+        let expected = instance
+        sourcesTask = Task { [weak self] in
+            guard let self else { return }
+            defer { if instance == expected { sourcesTask = nil; isFetchingSources = false } }
+            do {
+                let (data, response) = try await session.data(for: request)
+                try Task.checkCancellation()
+                guard instance == expected else { return }
+                guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+                    throw BridgeError.message("Could not refresh provider status.")
+                }
+                let snapshot = try JSONDecoder().decode(GatewaySnapshot.self, from: data)
+                gateway = snapshot; gatewayError = ""
+                if snapshot.codexLogin?.state != "connected"
+                    || codexQuota?.accountFingerprint != snapshot.codexLogin?.accountFingerprint {
+                    codexQuota = nil; lastCodexQuotaCheck = .distantPast
+                }
+                if snapshot.codexLogin?.state == "connected" {
+                    browserLoginRequested = false
+                } else if browserLoginRequested, let raw = snapshot.codexLogin?.url,
+                          raw != lastOpenedAuthURL, let url = URL(string: raw),
+                          url.scheme == "https", url.host == "auth.openai.com" {
+                    lastOpenedAuthURL = raw
+                    NSWorkspace.shared.open(url)
+                }
+            } catch {
+                if !Task.isCancelled && instance == expected { gatewayError = "Could not refresh provider status." }
+            }
+        }
+    }
+    public func connectCodex(device: Bool = false) {
+        guard state == .running else { message = "Start the service before connecting Codex."; return }
+        lastOpenedAuthURL = nil; browserLoginRequested = true
+        codexQuota = nil; codexQuotaError = ""; lastCodexQuotaCheck = .distantPast
+        sendControl("/bridge/auth/codex/start", body: ["method": device ? "device" : "browser"])
+    }
+    public func cancelCodexLogin() {
+        browserLoginRequested = false
+        sendControl("/bridge/auth/codex/cancel")
+    }
+    public func disconnectCodex() {
+        browserLoginRequested = false; codexQuota = nil
+        sendControl("/bridge/auth/codex/logout")
+    }
+    public func submitCodexCallback(_ callback: String) {
+        sendControl("/bridge/auth/codex/respond", body: ["value": callback])
+    }
+    public func copyCodexDeviceCode() {
+        guard let code = gateway.codexLogin?.code else { return }
+        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(code, forType: .string)
+    }
+    public func setLocalAPIKey(_ value: String) {
+        guard canStoreLocalKey else {
+            message = "Enable the local source, then save and restart this service for the displayed API address before storing its key."
+            return
+        }
+        sendControl("/bridge/local/key", body: ["value": value]) { [weak self] in
+            guard let self else { return }
+            settings.localRequiresKey = !value.isEmpty
+            currentSettings?.localRequiresKey = !value.isEmpty
+            do {
+                var saved = try AppPaths.loadSettings(root: root)
+                saved.localRequiresKey = !value.isEmpty
+                try AppPaths.saveSettings(saved, root: root)
+            } catch { message = "The key was stored, but its preference could not be saved. Save Settings before restarting." }
+        }
+    }
+    private func sendControl(_ path: String, body: [String: Any] = [:], success: (() -> Void)? = nil) {
+        guard authTask == nil, var request = request(path), state == .running else { return }
+        request.httpMethod = "POST"; request.setValue("application/json", forHTTPHeaderField: "content-type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        let expected = instance
+        isUpdatingProvider = true
+        authTask = Task { [weak self] in
+            guard let self else { return }
+            defer { if instance == expected { authTask = nil; isUpdatingProvider = false } }
+            do {
+                let (_, response) = try await session.data(for: request)
+                guard !Task.isCancelled, instance == expected else { return }
+                guard let status = (response as? HTTPURLResponse)?.statusCode, (200..<300).contains(status) else {
+                    throw BridgeError.message("The provider operation could not be completed.")
+                }
+                success?()
+                lastSourceCheck = .distantPast
+                refreshSources()
+            } catch {
+                if !Task.isCancelled && instance == expected { message = error.localizedDescription }
+            }
+        }
+    }
+    public func refreshCodexQuota() {
+        guard codexQuotaTask == nil, state == .running, let request = request("/bridge/quota/codex", timeout: 30) else { return }
+        lastCodexQuotaCheck = Date()
+        let expected = instance
+        codexQuotaTask = Task { [weak self] in
+            guard let self else { return }
+            defer { if instance == expected { codexQuotaTask = nil } }
+            do {
+                let (data, response) = try await session.data(for: request)
+                try Task.checkCancellation()
+                guard instance == expected else { return }
+                guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+                    throw BridgeError.message("Codex account quota is unavailable. Check your independent sign-in.")
+                }
+                let snapshot = try JSONDecoder().decode(CodexQuota.self, from: data)
+                guard snapshot.accountFingerprint == gateway.codexLogin?.accountFingerprint else { return }
+                codexQuota = snapshot
+                try store?.recordProviderQuota(.codex, data: data)
+                codexQuotaError = ""
+            } catch {
+                if !Task.isCancelled && instance == expected { codexQuotaError = error.localizedDescription }
+            }
+        }
     }
     private func checkHealth() {
         guard let request = request("/healthz", timeout: 3) else { return }
@@ -384,7 +544,8 @@ public final class BridgeController: ObservableObject {
         }
     }
     public func refreshQuota() {
-        guard quotaTask == nil, state == .running, let request = request("/usage") else { return }
+        guard quotaTask == nil, state == .running, currentSettings?.copilotEnabled == true,
+              let request = request("/bridge/quota/copilot") else { return }
         let expected = instance
         isFetchingQuota = true
         lastQuotaAttempt = Date()
@@ -419,6 +580,9 @@ public final class BridgeController: ObservableObject {
         stopTask?.cancel(); stopTask = nil
         healthTask?.cancel(); healthTask = nil
         quotaTask?.cancel(); quotaTask = nil; isFetchingQuota = false
+        sourcesTask?.cancel(); sourcesTask = nil; isFetchingSources = false
+        codexQuotaTask?.cancel(); codexQuotaTask = nil
+        authTask?.cancel(); authTask = nil; isUpdatingProvider = false
         service = nil; servicePID = nil; output = nil; login = nil; authOnly = false
         state = .stopped
         if quitting { session.invalidateAndCancel(); NSApp.terminate(nil); return }

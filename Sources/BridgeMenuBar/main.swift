@@ -3,6 +3,7 @@ import SwiftUI
 import BridgeUI
 import Combine
 import BridgeRuntime
+import BridgeCore
 import Darwin
 
 @MainActor
@@ -26,12 +27,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = item
         item.button?.image = StatusItemIcon.make()
         item.button?.target = self; item.button?.action = #selector(togglePopover)
-        item.button?.toolTip = "Copilot Bridge — Stopped"
+        item.button?.toolTip = "Codex Bridge — Stopped"
         popover.behavior = .transient
         popover.contentSize = NSSize(width: PanelLayout.width, height: PanelLayout.height)
         popover.contentViewController = NSHostingController(rootView: MenuView(controller: model))
         observer = model.$state.sink { [weak self] state in
-            self?.statusItem?.button?.toolTip = "Copilot Bridge — \(state.rawValue)"
+            self?.statusItem?.button?.toolTip = "Codex Bridge — \(state.rawValue)"
         }
     }
     @objc private func togglePopover() {
@@ -58,6 +59,9 @@ extension ProcessInfo {
     }
 }
 
+if CommandLine.arguments.contains("--credential-broker") {
+    exit(CredentialBroker.run())
+}
 if CommandLine.arguments.contains("--version") {
     print(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.0")
     exit(0)

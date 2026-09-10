@@ -6,6 +6,7 @@ public struct MenuView: View {
     @ObservedObject var controller: BridgeController
     @State private var tab = 0
     @State private var advanced = false
+    @State private var localKey = ""
 
     public init(controller: BridgeController, initialTab: Int = 0) {
         self.controller = controller
@@ -49,8 +50,8 @@ public struct MenuView: View {
                     .background(RoundedRectangle(cornerRadius: 7).fill(Color.accentColor.opacity(0.08)))
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text("Copilot Bridge").font(.system(size: 13, weight: .semibold))
-                Text("GitHub Copilot for Codex App").font(.system(size: 10)).foregroundStyle(.secondary)
+                Text("Codex Bridge").font(.system(size: 13, weight: .semibold))
+                Text("Codex, Copilot & local models").font(.system(size: 10)).foregroundStyle(.secondary)
             }
             Spacer()
             HStack(spacing: 5) {
@@ -109,7 +110,7 @@ public struct MenuView: View {
                         && (!controller.codexSwitch.enabled || controller.codexSwitch.managed) {
                         SettingToggle(title: "Use in Codex", value: Binding(
                             get: { controller.codexToggleValue }, set: { controller.setCodexEnabled($0) }),
-                            hint: "Use Copilot Bridge in Codex App. Restart Codex App after switching.")
+                              hint: "Use Codex Bridge in Codex App. Restart Codex App after switching.")
                             .frame(width: 145).disabled(controller.isUpdatingCodex)
                     } else {
                         Button { tab = 1 } label: { Label("Codex routing", systemImage: "slider.horizontal.3") }
@@ -119,7 +120,7 @@ public struct MenuView: View {
                 if controller.hasUnsavedChanges { InlineNote(text: "Settings changed. Save and restart to apply.", warning: true) }
             }
             Divider()
-            quota
+            SourcesSummary(controller: controller)
             Divider()
             ActivityHeatmap(days: controller.activity)
         }
@@ -128,7 +129,7 @@ public struct MenuView: View {
     private var codexRouting: some View {
         VStack(alignment: .leading, spacing: 4) {
             if controller.codexSwitch.known {
-                SettingToggle(title: "Use Copilot Bridge in Codex", value: Binding(
+                SettingToggle(title: "Use Codex Bridge in Codex", value: Binding(
                     get: { controller.codexToggleValue }, set: { controller.setCodexEnabled($0) }),
                     hint: controller.codexConfigPath)
                     .disabled(controller.isUpdatingCodex || !controller.codexSwitch.canChange)
@@ -148,41 +149,30 @@ public struct MenuView: View {
         }
     }
 
-    private var quota: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SectionHeading(controller.quota?.title ?? "GitHub credits") {
-                Button { controller.refreshQuota() } label: {
-                    Label(controller.isFetchingQuota ? "Refreshing…" : "Refresh usage", systemImage: "arrow.clockwise")
-                }.buttonStyle(PanelButtonStyle())
-                    .disabled(controller.isFetchingQuota || controller.state != .running)
-                    .help(controller.state != .running ? "Start this app’s service to refresh account usage"
-                          : "Fetch account usage from GitHub. This does not change your authorization.")
-            }
-            if let value = controller.quota {
-                QuotaAmounts(snapshot: value)
-                HStack {
-                    Text(value.entitlement.map { "Limit " + ActivityText.number($0) } ?? "Limit unknown")
-                    Spacer()
-                    if let date = controller.quotaDate {
-                        Text("As of " + (Calendar.current.isDateInToday(date)
-                            ? ActivityText.time(date) : ActivityText.date(date) + " " + ActivityText.time(date)))
-                    }
-                }.font(.system(size: 9)).foregroundStyle(.secondary)
-                if let reset = value.reset {
-                    Text("Resets: " + reset).font(.system(size: 9)).foregroundStyle(.tertiary).lineLimit(1).help(reset)
-                }
-            } else {
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text("—").font(.system(size: 22, weight: .medium, design: .rounded)).foregroundStyle(.tertiary)
-                    Text("Start the service to check your balance").font(.system(size: 10)).foregroundStyle(.secondary)
-                }
-            }
-            if !controller.quotaError.isEmpty { InlineNote(text: controller.quotaError, warning: true) }
-        }.help("GitHub account-wide quota in its original units; no dollar conversion.")
-    }
-
     private var preferences: some View {
         VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 6) {
+                SectionHeading("Model sources") { EmptyView() }
+                SettingToggle(title: "Codex subscription", value: $controller.settings.codexEnabled,
+                              hint: "Connect an independent account from the Codex row in Overview.")
+                SettingToggle(title: "GitHub Copilot", value: $controller.settings.copilotEnabled)
+                SettingToggle(title: "Unsloth Studio", value: $controller.settings.localEnabled,
+                              hint: "Discover only loaded conversational models. No automatic model loading.")
+                TextSetting(title: "Local API", placeholder: "http://host:port/v1", value: $controller.settings.localURL)
+                HStack {
+                    SecureField("Optional local API key", text: $localKey)
+                        .textFieldStyle(.roundedBorder).font(.system(size: 10))
+                    Button("Store key") { controller.setLocalAPIKey(localKey); localKey = "" }
+                        .buttonStyle(PanelButtonStyle()).disabled(!controller.canStoreLocalKey || localKey.isEmpty)
+                        .help("Save and restart after changing the API address. The key is bound to that endpoint in Keychain.")
+                    if controller.settings.localRequiresKey {
+                        Button("Clear") { controller.setLocalAPIKey(""); localKey = "" }
+                            .buttonStyle(PanelButtonStyle()).disabled(!controller.canStoreLocalKey)
+                    }
+                }
+                InlineNote(text: "Runtime context and declared capabilities are discovered automatically. Refresh or restart Codex App when its model list is stale.")
+            }
+            Divider()
             VStack(alignment: .leading, spacing: 8) {
                 SectionHeading("Codex App") {
                     Button("Open backups") { controller.openCodexBackups() }.buttonStyle(PanelButtonStyle())
@@ -226,8 +216,8 @@ public struct MenuView: View {
             }
             Divider()
             VStack(alignment: .leading, spacing: 8) {
-                SectionHeading("Model & requests") { EmptyView() }
-                TextSetting(title: "Bridge model override", placeholder: "Use Codex App’s selected model", value: $controller.settings.model)
+                SectionHeading("Copilot requests") { EmptyView() }
+                TextSetting(title: "Copilot model override", placeholder: "Use Codex App’s selected Copilot model", value: $controller.settings.model)
                 SettingToggle(title: "Auto mode", value: $controller.settings.autoMode,
                               hint: "Only models available in Copilot Auto sessions are supported")
                 numericRow("Request interval", value: $controller.settings.rateLimitSeconds, suffix: "s")

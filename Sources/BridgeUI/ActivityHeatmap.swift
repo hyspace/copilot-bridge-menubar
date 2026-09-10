@@ -64,19 +64,17 @@ enum ActivityText {
             date(day.date),
             day.tokens == 0 && day.hasUnknownUsage ? "Token usage was not reported"
                 : "\(day.tokens.formatted(.number.locale(locale))) recorded tokens",
-            "Reported input: \(day.usage.input) · Output: \(day.usage.output) · Cached: \(day.usage.cached)",
-            "\(day.usage.requests) requests · \(day.usage.errors) errors",
-            credits(day),
-            "Complete token usage for \(max(0, day.usage.requests - day.usage.unknown)) of \(day.usage.requests) requests.",
-            coverage(day),
-            "Request billing reported by Copilot; not the account balance."
+            "Recorded through this Bridge; not account-wide usage."
         ]
+        for provider in UsageProvider.allCases { lines.append("\(provider.title): \(providerTokens(day, provider))") }
         if day.hasUnknownUsage { lines += ["\(day.usage.unknown) requests have missing token usage."] }
-        if day.hasUnknownCredits {
-            let subject = day.usage.unknownCredits == 1 ? "1 request has" : "\(day.usage.unknownCredits) requests have"
-            lines += ["\(subject) no recorded billing. Missing charges are not treated as zero."]
-        }
         return lines.joined(separator: "\n")
+    }
+    static func providerTokens(_ day: ActivityDay, _ provider: UsageProvider) -> String {
+        let usage = day.providers[provider] ?? (day.providers.isEmpty && provider == .copilot ? day.usage : UsageTotals())
+        let tokens = usage.input + usage.output
+        if tokens == 0 && usage.unknown > 0 { return "Unreported" }
+        return tokens.formatted(.number.locale(locale).notation(.compactName)) + (usage.unknown > 0 ? " · partial" : "")
     }
 }
 
@@ -123,7 +121,7 @@ struct ActivityHeatmap: View {
         let monthLabels = months
         let peak = maximum
         VStack(alignment: .leading, spacing: 8) {
-            SectionHeading("Activity") {
+            SectionHeading("Recorded usage") {
                 Text("26 weeks").font(.system(size: 9)).foregroundStyle(.secondary)
             }
             HStack(alignment: .top, spacing: 0) {
@@ -165,7 +163,7 @@ struct ActivityHeatmap: View {
                     .map(ActivityText.tooltip) ?? "")
             }
             HStack(spacing: 3) {
-                Text("Input + output tokens").font(.system(size: 8))
+                Text("All sources · input + output").font(.system(size: 8))
                 Spacer(minLength: 3)
                 Text("Less").padding(.trailing, 2)
                 ForEach(0..<5) { level in
@@ -180,15 +178,17 @@ struct ActivityHeatmap: View {
                         Spacer(minLength: 4)
                         Text(ActivityText.tokens(day)).monospacedDigit()
                     }.font(.system(size: 10))
-                    HStack(spacing: 4) {
-                        Image(systemName: "creditcard").font(.system(size: 9))
-                        Text(ActivityText.credits(day)).monospacedDigit()
-                        Spacer(minLength: 0)
-                    }.font(.system(size: 10)).foregroundStyle(.secondary)
-                    Text(ActivityText.coverageSummary(day))
-                        .font(.system(size: 8)).foregroundStyle(.tertiary)
+                    ForEach(UsageProvider.allCases) { provider in
+                        HStack {
+                            Text(provider.title).foregroundStyle(.secondary)
+                            Spacer(minLength: 4)
+                            Text(ActivityText.providerTokens(day, provider)).monospacedDigit()
+                        }.font(.system(size: 10))
+                    }
+                    Text(day.hasUnknownUsage ? "Partial usage · missing counters are not zero" : "Recorded through this Bridge")
+                        .font(.system(size: 8)).foregroundStyle(day.hasUnknownUsage ? Color.orange : Color.secondary)
                 }
-                .frame(maxWidth: .infinity, minHeight: 48, alignment: .topLeading)
+                .frame(maxWidth: .infinity, minHeight: 82, maxHeight: 82, alignment: .topLeading)
                 .padding(8)
                 .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.035)))
                 .accessibilityElement(children: .ignore)
