@@ -73,7 +73,10 @@ and device-code interaction is initiated in the app. The backend neither imports
 Codex App's credentials nor reads/writes its `auth.json`. A private native stdio
 broker stores this account in Keychain and holds a lifetime OS lock. Refresh,
 login commit and logout are serialized; cancellation cannot resurrect a login.
-Tokens must persist before a refreshed credential is returned. A 401 retry may
+Tokens must persist before a refreshed credential is returned. The final Keychain
+login commit is briefly non-cancellable: Cancel is disabled, and a stale cancellation
+request receives an explicit conflict rather than falsely reporting success.
+Disconnect queues removal after any in-flight commit. A 401 retry may
 refresh once but cannot switch accounts mid-request.
 
 Caller authentication, cookies and account IDs are never copied to a different

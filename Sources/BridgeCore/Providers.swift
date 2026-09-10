@@ -40,6 +40,7 @@ public struct CodexLoginState: Codable, Equatable {
     public var url: String?
     public var code: String?
     public var awaitingCode: Bool?
+    public var canCancel: Bool?
     public var accountFingerprint: String?
     public var accountLabel: String?
 }

@@ -139,7 +139,8 @@ struct SourcesSummary: View {
                             .buttonStyle(PanelButtonStyle()).disabled(callback.isEmpty || controller.isUpdatingProvider)
                     }
                     Button("Cancel sign-in") { controller.cancelCodexLogin(); callback = "" }
-                        .buttonStyle(PanelButtonStyle()).disabled(controller.isUpdatingProvider)
+                        .buttonStyle(PanelButtonStyle()).disabled(controller.isUpdatingProvider
+                            || controller.gateway.codexLogin?.canCancel == false)
                 } else {
                     HStack {
                         Button(controller.gateway.codexLogin?.state == "connected" ? "Reconnect…" : "Connect…") {
