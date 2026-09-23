@@ -8,6 +8,13 @@ Codex App is the only supported client. Manage its routing switch, the local
 Bridge service, GitHub authorization, token activity and credit usage.
 No Dock icon, ordinary application window, or separate Bun installation.
 
+Model reasoning options follow the account's live GitHub Copilot catalog.
+The Bridge does not trim advertised levels to a hardcoded model table: `max`
+stays `max`, and discovery updates the metadata used when forwarding requests.
+The existing provider-specific wire adapters remain in place. Codex App can
+retain its own model picker state; after a manual Bridge upgrade, restart Codex
+App to refresh it. The updater must not restart a Bridge serving its own session.
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/overview-dark.png">
   <img src="docs/screenshots/overview.png" width="384" alt="Copilot Bridge overview with synthetic example data">
