@@ -14,6 +14,10 @@ stays `max`, and discovery updates the metadata used when forwarding requests.
 The existing provider-specific wire adapters remain in place. Codex App can
 retain its own model picker state; after a manual Bridge upgrade, restart Codex
 App to refresh it. The updater must not restart a Bridge serving its own session.
+Codex App also has its own setting controlling whether **Max** appears in the
+picker. An advertised `max` level does not bypass that UI setting; enabling it
+is separate from Bridge routing and does not require changing the provider's
+reasoning options.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/overview-dark.png">

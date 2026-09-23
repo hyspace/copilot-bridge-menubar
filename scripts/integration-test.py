@@ -30,6 +30,18 @@ MODEL = {
 KNOWN_MODEL = json.loads(json.dumps(MODEL))
 KNOWN_MODEL["id"] = KNOWN_MODEL["name"] = KNOWN_MODEL["capabilities"]["family"] = "gpt-5.6-luna"
 KNOWN_MODEL["capabilities"]["supports"]["reasoning_effort"] = ["none","low","medium","high","xhigh","max"]
+HIDDEN_MODEL = json.loads(json.dumps(MODEL))
+HIDDEN_MODEL["id"] = HIDDEN_MODEL["name"] = "hidden-router-without-limits"
+HIDDEN_MODEL["model_picker_enabled"] = False
+HIDDEN_MODEL["capabilities"].pop("limits")
+EMBEDDING_MODEL = json.loads(json.dumps(HIDDEN_MODEL))
+EMBEDDING_MODEL["id"] = EMBEDDING_MODEL["name"] = "embedding-without-limits"
+EMBEDDING_MODEL["capabilities"].update(type="embeddings", limits=None)
+CATALOG_MODELS = [HIDDEN_MODEL, MODEL, KNOWN_MODEL, EMBEDDING_MODEL]
+if snapshot := os.environ.get("CBM_CATALOG_SNAPSHOT"):
+    snapshot_path = pathlib.Path(snapshot).resolve()
+    assert snapshot_path.is_relative_to(ROOT / "build"), "Only private build snapshots may be replayed"
+    CATALOG_MODELS = json.loads(snapshot_path.read_text())["data"]
 
 class Mock(http.server.BaseHTTPRequestHandler):
     def log_message(self, *_): pass
@@ -42,7 +54,7 @@ class Mock(http.server.BaseHTTPRequestHandler):
         self.wfile.write(data)
     def do_GET(self):
         assert self.path.startswith("/models"), self.path
-        self.send(json.dumps({"object": "list", "data": [MODEL, KNOWN_MODEL]}))
+        self.send(json.dumps({"object": "list", "data": CATALOG_MODELS}))
     def do_POST(self):
         assert self.headers.get("Authorization") == "Bearer FAKE_COPILOT_TEST_TOKEN"
         assert self.headers.get("ChatGPT-Account-ID") is None, "OpenAI identity leaked upstream"
@@ -138,8 +150,14 @@ with tempfile.TemporaryDirectory(prefix="cbm-integration-") as directory:
             assert fetch(p, "/healthz")[0] == 200
             assert fetch(p, "/v1/responses")[0] == 404  # HTTP GET is not WebSocket.
             status, data = fetch(p, "/v1/models?client_version=0.153.3")
-            assert status == 200 and json.loads(data)["models"][0]["slug"] == "gpt-6-astra"
+            assert status == 200, (status, data[:200])
             catalog = {item["slug"]: item for item in json.loads(data)["models"]}
+            assert {MODEL["id"], KNOWN_MODEL["id"]}.issubset(catalog)
+            assert HIDDEN_MODEL["id"] not in catalog and EMBEDDING_MODEL["id"] not in catalog
+            upstream_by_id = {item["id"]: item for item in CATALOG_MODELS}
+            for slug, item in catalog.items():
+                assert [level["effort"] for level in item["supported_reasoning_levels"]] == \
+                    upstream_by_id[slug]["capabilities"]["supports"].get("reasoning_effort", [])
             for fixture in [MODEL, KNOWN_MODEL]:
                 assert [level["effort"] for level in catalog[fixture["id"]]["supported_reasoning_levels"]] == \
                     fixture["capabilities"]["supports"]["reasoning_effort"]
@@ -210,4 +228,5 @@ assert ORIGINAL_PID == current, "Protected listener identity changed"
 print("PASS: compiled arm64 backend, 108 keyless fake requests, token/billing/413/interruption,")
 print("      large completion events, sibling usage, final Chat usage-only chunks,")
 print("      upstream reasoning parity, max forwarding, no config writes, port conflict, parent-death cleanup.")
+print(f"Replayed complete upstream catalog: {len(CATALOG_MODELS)} entries, including hidden/non-chat models.")
 print(f"Protected 4142 listener unchanged: {current or '(none)'}")
