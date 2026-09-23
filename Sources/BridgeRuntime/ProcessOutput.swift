@@ -13,17 +13,68 @@ final class ProcessOutput {
     private var stderr = LineFramer()
     private let log: RotatingLog
     private let store: UsageStore
+    private let journal: UsageJournal
+    private var retryTimer: DispatchSourceTimer?
+    private var usageFailure: String?
+    private var lastUsageWarning = Date.distantPast
     private let secrets: [String]
     private let eventToken: String
     private var lines: [String] = []
     private var login: LoginPrompt?
     private var authenticated = false
     private var failure: String?
-    init(root: URL, secrets: [String], eventToken: String) throws {
+    init(root: URL, secrets: [String], eventToken: String, retryInterval: TimeInterval = 30) throws {
         self.secrets = secrets
         self.eventToken = eventToken
         self.log = try RotatingLog(root: root.appendingPathComponent("Logs"))
         self.store = try UsageStore(url: root.appendingPathComponent("usage.sqlite"))
+        self.journal = try UsageJournal(root: root.appendingPathComponent("UsageRecovery"))
+        replayUsage()
+        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "com.hyspace.bridge.usage-recovery"))
+        timer.schedule(deadline: .now() + retryInterval, repeating: retryInterval)
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            self.lock.lock(); defer { self.lock.unlock() }
+            self.replayUsage()
+        }
+        timer.resume()
+        retryTimer = timer
+    }
+    deinit { retryTimer?.cancel() }
+    private func reportUsageFailure(_ text: String) {
+        usageFailure = text
+        // A persistent error must stay visible without filling the rotated logs.
+        if Date().timeIntervalSince(lastUsageWarning) >= 60 {
+            append(text); lastUsageWarning = Date()
+        }
+    }
+    private func replayUsage() {
+        do {
+            let count = try journal.replay(into: store)
+            if count > 0 { append("Recovered \(count) pending usage records (deduplicated).") }
+            usageFailure = nil
+        } catch { reportUsageFailure("Usage recovery needs attention: \(error.localizedDescription)") }
+    }
+    private func recordUsage(_ event: UsageEvent) {
+        var entry: URL?
+        var journalError: Error?
+        do { entry = try journal.stage(event) }
+        catch { journalError = error }
+        do {
+            try store.record(event)
+            if let entry { try journal.acknowledge(entry) }
+            if let journalError {
+                reportUsageFailure("Usage saved, but crash-recovery journaling failed: \(journalError.localizedDescription)")
+            }
+        } catch {
+            reportUsageFailure(entry != nil
+                ? "Could not save usage; a private recovery record was retained and will retry every 30 seconds: \(error.localizedDescription)"
+                : "Could not save or journal usage; this event could not be retained: \(error.localizedDescription)")
+        }
+    }
+    func diagnostic(_ text: String) {
+        lock.lock(); defer { lock.unlock() }
+        append(Redactor.clean(text, secrets: secrets))
     }
     func consume(_ data: Data, error: Bool) {
         lock.lock(); defer { lock.unlock() }
@@ -37,8 +88,7 @@ final class ProcessOutput {
                     continue
                 }
                 if let event = try? JSONDecoder().decode(UsageEvent.self, from: json), event.kind == "usage" {
-                    do { try store.record(event) }
-                    catch { append("Could not save usage: \(error.localizedDescription)") }
+                    recordUsage(event)
                     if event.tokensComplete == false {
                         let reasons = [
                             "partial": "only partial token counters were reported",
@@ -84,8 +134,8 @@ final class ProcessOutput {
         if lines.count > 200 { lines.removeFirst(lines.count - 200) }
         do { try log.append(text) } catch { failure = "Could not write logs: \(error.localizedDescription)" }
     }
-    func snapshot() -> (lines: [String], login: LoginPrompt?, authenticated: Bool, failure: String?) {
+    func snapshot() -> (lines: [String], login: LoginPrompt?, authenticated: Bool, failure: String?, usageFailure: String?) {
         lock.lock(); defer { lock.unlock() }
-        return (lines, login, authenticated, failure)
+        return (lines, login, authenticated, failure, usageFailure)
     }
 }

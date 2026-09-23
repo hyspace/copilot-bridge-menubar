@@ -21,6 +21,13 @@ public struct UsageEvent: Codable {
 }
 
 extension UsageEvent {
+    public func validate(now: Date = Date()) throws {
+        guard kind == "usage", id.count <= 128, !id.isEmpty,
+              timestamp.isFinite, abs(timestamp - now.timeIntervalSince1970) < 86400 * 3,
+              model.count <= 128, outcome.count <= 64 else {
+            throw BridgeError.message("Ignored an invalid or expired usage event.")
+        }
+    }
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         kind = try values.decode(String.self, forKey: .kind)
@@ -62,6 +69,8 @@ public final class UsageStore {
             throw BridgeError.message("Could not open the local usage database.")
         }
         do {
+            // A rollback must never silently reuse or prune a newer provider schema.
+            try validateSchema()
             try exec("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=2000; PRAGMA wal_autocheckpoint=100;")
             try exec("""
             CREATE TABLE IF NOT EXISTS totals (
@@ -76,7 +85,7 @@ public final class UsageStore {
               day TEXT PRIMARY KEY, observed_at REAL NOT NULL, snapshot TEXT NOT NULL);
             """)
             try migrateBillingColumns()
-            try exec("DELETE FROM seen WHERE timestamp < strftime('%s','now')-86400*2;")
+            try exec("DELETE FROM seen WHERE timestamp < strftime('%s','now')-86400*4;")
             try exec("DELETE FROM totals WHERE day < date('now','-730 days');")
             try exec("DELETE FROM quota_history WHERE day < date('now','-730 days');")
         } catch { sqlite3_close(db); db = nil; throw error }
@@ -86,7 +95,28 @@ public final class UsageStore {
         guard sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK else { throw failure() }
     }
     private func failure() -> BridgeError {
-        .message("Usage database error: \(db.map { String(cString: sqlite3_errmsg($0)) } ?? "closed")")
+        .message("Usage database error (SQLite \(sqlite3_extended_errcode(db))): \(db.map { String(cString: sqlite3_errmsg($0)) } ?? "closed")")
+    }
+    private func validateSchema() throws {
+        for (table, expectedKey) in [("totals", ["day", "model"]), ("seen", ["id"])] {
+            var statement: OpaquePointer?
+            guard sqlite3_prepare_v2(db, "PRAGMA table_info(\(table))", -1, &statement, nil) == SQLITE_OK else { throw failure() }
+            defer { sqlite3_finalize(statement) }
+            var keys: [(Int32, String)] = []
+            var columns = Set<String>()
+            var result = sqlite3_step(statement)
+            while result == SQLITE_ROW {
+                let name = String(cString: sqlite3_column_text(statement, 1))
+                columns.insert(name)
+                let order = sqlite3_column_int(statement, 5)
+                if order > 0 { keys.append((order, name)) }
+                result = sqlite3_step(statement)
+            }
+            guard result == SQLITE_DONE else { throw failure() }
+            guard columns.isEmpty || (!columns.contains("provider") && keys.sorted { $0.0 < $1.0 }.map(\.1) == expectedKey) else {
+                throw BridgeError.message("This usage database belongs to an incompatible version. No migration or cleanup was performed. Back it up and run the 0.4 database repair utility; aggregate versions must use their separate database.")
+            }
+        }
     }
     private func bind(_ value: String, _ position: Int32, _ statement: OpaquePointer?) {
         sqlite3_bind_text(statement, position, value, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
@@ -112,10 +142,7 @@ public final class UsageStore {
         } catch { try? exec("ROLLBACK"); throw error }
     }
     public func record(_ event: UsageEvent) throws {
-        guard event.kind == "usage", event.id.count <= 128, !event.id.isEmpty,
-              event.timestamp.isFinite, abs(event.timestamp - Date().timeIntervalSince1970) < 86400 * 3,
-              event.model.count <= 128
-        else { throw BridgeError.message("Ignored an invalid usage event.") }
+        try event.validate()
         func tokenCount(_ value: Int64?) -> Int64? {
             value.flatMap { (0...1_000_000_000).contains($0) ? $0 : nil }
         }
@@ -124,7 +151,8 @@ public final class UsageStore {
             value.isFinite && value >= 0 && value <= 9_007_199_254_740_991 ? value : nil
         }
         if Date().timeIntervalSince(lastMaintenance) > 3600 {
-            try exec("DELETE FROM seen WHERE timestamp < strftime('%s','now')-86400*2;")
+            // Retain IDs longer than the journal replay acceptance window.
+            try exec("DELETE FROM seen WHERE timestamp < strftime('%s','now')-86400*4;")
             try exec("DELETE FROM totals WHERE day < date('now','-730 days');")
             try exec("DELETE FROM quota_history WHERE day < date('now','-730 days');")
             lastMaintenance = Date()
@@ -132,7 +160,7 @@ public final class UsageStore {
         try exec("BEGIN IMMEDIATE")
         do {
             var s: OpaquePointer?
-            guard sqlite3_prepare_v2(db, "INSERT OR IGNORE INTO seen VALUES (?,?)", -1, &s, nil) == SQLITE_OK else { throw failure() }
+            guard sqlite3_prepare_v2(db, "INSERT OR IGNORE INTO seen(id,timestamp) VALUES (?,?)", -1, &s, nil) == SQLITE_OK else { throw failure() }
             bind(event.id, 1, s); sqlite3_bind_double(s, 2, event.timestamp)
             let insertResult = sqlite3_step(s); sqlite3_finalize(s)
             guard insertResult == SQLITE_DONE else { throw failure() }

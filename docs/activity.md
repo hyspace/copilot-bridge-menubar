@@ -125,7 +125,7 @@ billing reports: their old costs are unknown, not free.
 
 Old events without `nanoAiu` remain readable. Existing `quota_history` data stays
 available for balance caching; it is not converted into request charges. Daily
-aggregates retain 730 days and deduplication IDs retain two days.
+aggregates retain 730 days and deduplication IDs retain four days.
 
 The interface refreshes when usage totals change or the local day rolls over.
 Hovering never queries the database or contacts GitHub. Prompts, response text

@@ -71,10 +71,16 @@ It is account-wide, whereas the activity grid covers requests handled by this ap
 The card shows **credits used on the left** and **remaining percentage on the right**.
 Hover the percentage for the exact remaining credit amount.
 The bar follows the same order: gray used quota, then green remaining quota.
+A thin blue line underneath shows **calendar-month progress in UTC**, also from
+left to right. The difference in percentage points is a linear pacing reference,
+not a billing-cycle claim or spending forecast. Stale balances (over 15 minutes),
+previous-month snapshots and expired reset dates are not compared.
 Reported usage is preferred; when only a limit and remaining quota are available,
 the calculated used amount is explicitly labeled **derived**. Unknown is not zero.
 **Refresh usage** updates these account figures, not authorization.
-Failed balance refreshes preserve the original observation timestamp. Legacy
+Failed network balance refreshes preserve the original observation timestamp.
+Local persistence failures are distinguished from GitHub/network failures in
+both the UI and safe, stage-specific diagnostics. Legacy
 premium-interaction quotas keep their own labels. See [activity data](docs/activity.md).
 
 **Settings > GitHub account > Authorize GitHub…** starts a fresh device
@@ -149,13 +155,24 @@ networks only. Do not expose it to the internet or configure port forwarding.**
 
 Settings, daily/model token and billing totals, and quota snapshots are stored locally.
 No prompt or response database is created. Aggregates are retained for 730 days,
-deduplication IDs for two days, and logs for up to four files of approximately
+deduplication IDs for four days, and logs for up to four files of approximately
 2 MB each. Only the latest 200 log lines are held in the interface.
+Successful health probes are not logged. History refreshes at least every 30
+seconds while the app is awake, including during menu tracking.
+
+Usage metadata is journaled privately before writing to SQLite and removed
+after commit. Pending entries are retried every 30 seconds and on service startup,
+deduplicated by request ID. The journal is bounded to 4,096 entries of at most
+4 KiB each. Expired (over three days) or corrupt entries are retained for manual
+inspection rather than silently deleted or guessed. Recovery/storage failures
+are shown in the interface; repeated warnings are rate-limited.
 
 ```text
 ~/Library/Application Support/CopilotBridgeMenuBar/
   settings.json       # App settings; no account credentials
   usage.sqlite        # Request tokens, billing totals and quota observations
+  UsageRecovery/      # Temporary typed usage metadata, no prompts or credentials
+  DatabaseBackups/    # Private snapshots created by the explicit repair utility
   Logs/bridge*.log    # Rotating diagnostics
   CodexConfig/        # Private full-config backups and transaction recovery state
 ~/.local/share/copilot-bridge/github_token  # CLI-managed credentials, mode 0600
@@ -167,6 +184,11 @@ service logs, but review debug logs before sharing them: upstream
 errors may contain application-specific information. GitHub's internal quota
 interface may change; missing values are shown as unknown, never invented.
 Credit units are not converted into dollars.
+
+An incompatible provider-aware database is rejected before migration or cleanup.
+For a rollback from the shelved aggregate preview, see
+[0.4 database recovery](docs/database-recovery.md). Do not restore an old file
+over a live SQLite/WAL database, or discard newer quota history.
 
 ## Development
 

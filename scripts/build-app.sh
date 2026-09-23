@@ -25,12 +25,13 @@ if [[ ! -d vendor/copilot-bridge/node_modules ]]; then
 fi
 mkdir -p .build/module-cache build
 python3 scripts/build-backend.py
-CLANG_MODULE_CACHE_PATH="$ROOT/.build/module-cache" \
-SWIFTPM_MODULECACHE_OVERRIDE="$ROOT/.build/module-cache" \
+export CLANG_MODULE_CACHE_PATH="$ROOT/.build/module-cache"
+export SWIFTPM_MODULECACHE_OVERRIDE="$ROOT/.build/module-cache"
 swift build -c release --arch arm64 --disable-sandbox
+BIN_DIR="$(swift build -c release --arch arm64 --disable-sandbox --show-bin-path)"
 APP="$ROOT/build/Copilot Bridge.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp .build/arm64-apple-macosx/release/CopilotBridgeMenuBar "$APP/Contents/MacOS/"
+cp "$BIN_DIR/CopilotBridgeMenuBar" "$APP/Contents/MacOS/"
 cp build/copilot-bridge-service "$APP/Contents/Resources/"
 cp resources/Info.plist "$APP/Contents/Info.plist"
 cp resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"

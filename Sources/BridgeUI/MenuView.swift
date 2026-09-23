@@ -159,7 +159,7 @@ public struct MenuView: View {
                           : "Fetch account usage from GitHub. This does not change your authorization.")
             }
             if let value = controller.quota {
-                QuotaAmounts(snapshot: value)
+                QuotaAmounts(snapshot: value, observedAt: controller.quotaDate)
                 HStack {
                     Text(value.entitlement.map { "Limit " + ActivityText.number($0) } ?? "Limit unknown")
                     Spacer()
@@ -178,6 +178,7 @@ public struct MenuView: View {
                 }
             }
             if !controller.quotaError.isEmpty { InlineNote(text: controller.quotaError, warning: true) }
+            if !controller.usageError.isEmpty { InlineNote(text: controller.usageError, warning: true) }
         }.help("GitHub account-wide quota in its original units; no dollar conversion.")
     }
 

@@ -19,6 +19,7 @@ public final class BridgeController: ObservableObject {
     @Published public private(set) var activity: [ActivityDay] = []
     @Published public private(set) var quota: QuotaSnapshot?
     @Published public private(set) var quotaError = ""
+    @Published public private(set) var usageError = ""
     @Published public private(set) var quotaDate: Date?
     @Published public private(set) var loginItemEnabled = false
     @Published public private(set) var isFetchingQuota = false
@@ -43,6 +44,8 @@ public final class BridgeController: ObservableObject {
     private var lastHealth = Date.distantPast
     private var lastQuotaAttempt = Date.distantPast
     private var historyDay = ""
+    private var lastHistoryRefresh = Date.distantPast
+    private let historyRefreshInterval: TimeInterval
     private var unhealthyCount = 0
     private var instance = ""
     private var currentSettings: BridgeSettings?
@@ -79,7 +82,8 @@ public final class BridgeController: ObservableObject {
     init(root: URL, backend: URL?, home: URL, heartbeat: TimeInterval = 1,
          shutdownGrace: TimeInterval = 5, retryScale: Double = 1, launchFromArguments: Bool = false,
          healthInterval: TimeInterval = 5, startupTimeout: TimeInterval = 90, codexHome: URL? = nil,
-         configPlanner: CodexConfigManager.Planner? = nil, codexHomeError: String? = nil) {
+         configPlanner: CodexConfigManager.Planner? = nil, codexHomeError: String? = nil,
+         historyRefreshInterval: TimeInterval = 30) {
         self.root = root
         self.backend = backend
         self.home = home
@@ -87,6 +91,7 @@ public final class BridgeController: ObservableObject {
         self.retryScale = retryScale
         self.healthInterval = healthInterval
         self.startupTimeout = startupTimeout
+        self.historyRefreshInterval = historyRefreshInterval
         self.codexHomeError = codexHomeError
         let planner = CodexConfigPlanner(executable: backend, home: home)
         codexManager = CodexConfigManager(home: codexHome ?? home.appendingPathComponent(".codex"),
@@ -106,9 +111,11 @@ public final class BridgeController: ObservableObject {
             try refreshUsage(forceHistory: true)
         } catch { message = error.localizedDescription }
         loginItemEnabled = SMAppService.mainApp.status == .enabled
-        timer = Timer.scheduledTimer(withTimeInterval: heartbeat, repeats: true) { [weak self] _ in
+        let heartbeatTimer = Timer(timeInterval: heartbeat, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.tick() }
         }
+        RunLoop.main.add(heartbeatTimer, forMode: .common)
+        timer = heartbeatTimer
         if settings.startOnLaunch || launchFromArguments { start() }
         refreshCodexConfiguration()
     }
@@ -297,10 +304,12 @@ public final class BridgeController: ObservableObject {
     }
 
     private func tick() {
+        usageError = ""
         if Date().timeIntervalSince(lastCodexCheck) >= 10 { refreshCodexConfiguration() }
         if let output {
             let snapshot = output.snapshot()
             logs = snapshot.lines
+            usageError = snapshot.usageFailure ?? ""
             if let failure = snapshot.failure { message = failure }
             if snapshot.authenticated {
                 login = nil
@@ -321,7 +330,7 @@ public final class BridgeController: ObservableObject {
         }
         do {
             try refreshUsage()
-        } catch { message = error.localizedDescription }
+        } catch { usageError = error.localizedDescription }
         if service != nil && state == .starting && Date().timeIntervalSince(startedAt) > startupTimeout {
             message = authOnly
                 ? "Authorization initialization timed out. Check your connection and sign in again."
@@ -345,10 +354,12 @@ public final class BridgeController: ObservableObject {
         if nextToday != today { today = nextToday }
         if nextTotal != total { total = nextTotal }
         let day = ActivityCalendar.key(Date())
-        if forceHistory || changed || historyDay != day || activity.isEmpty {
+        if forceHistory || changed || historyDay != day || activity.isEmpty
+            || Date().timeIntervalSince(lastHistoryRefresh) >= historyRefreshInterval {
             let next = try store?.activity() ?? ActivityCalendar.grid()
             if activity != next { activity = next }
             historyDay = day
+            lastHistoryRefresh = Date()
         }
     }
 
@@ -393,20 +404,35 @@ public final class BridgeController: ObservableObject {
             defer {
                 if instance == expected { quotaTask = nil; isFetchingQuota = false }
             }
+            let began = Date()
+            let attempt = UUID().uuidString
+            var stage = "network"
+            var status: Int?
             do {
                 let (data, response) = try await session.data(for: request)
                 try Task.checkCancellation()
                 guard instance == expected else { return }
+                stage = "http"
+                status = (response as? HTTPURLResponse)?.statusCode
                 guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-                    throw BridgeError.message("Could not fetch GitHub quota. Check your sign-in and proxy settings.")
+                    throw BridgeError.message("Could not fetch GitHub quota (HTTP \(status.map(String.init) ?? "unknown")). Check your sign-in and proxy settings.")
                 }
+                stage = "decode"
                 let snapshot = try QuotaSnapshot.decode(data)
                 let observedAt = Date()
                 quota = snapshot; quotaDate = observedAt; quotaError = ""
+                stage = "persist"
                 try store?.recordQuota(snapshot, at: observedAt)
+                stage = "history"
                 try refreshUsage(forceHistory: true)
             } catch {
-                if !Task.isCancelled && instance == expected { quotaError = error.localizedDescription }
+                if !Task.isCancelled && instance == expected {
+                    let localFailure = stage == "persist" || stage == "history"
+                    quotaError = (localFailure ? "Balance refreshed, but local history could not be updated. " : "")
+                        + error.localizedDescription
+                    let nsError = error as NSError
+                    output?.diagnostic("Quota refresh failed: stage=\(stage) attempt=\(attempt) http=\(status.map(String.init) ?? "none") elapsed_ms=\(Int(Date().timeIntervalSince(began) * 1000)) error_domain=\(nsError.domain) error_code=\(nsError.code)")
+                }
             }
         }
     }

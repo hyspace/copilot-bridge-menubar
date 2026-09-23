@@ -69,6 +69,7 @@ struct QuotaBar: View {
 
 struct QuotaAmounts: View {
     let snapshot: QuotaSnapshot
+    var observedAt: Date? = nil
     var body: some View {
         let presentation = QuotaPresentation(snapshot: snapshot)
         VStack(alignment: .leading, spacing: 10) {
@@ -91,6 +92,35 @@ struct QuotaAmounts: View {
             .monospacedDigit().lineLimit(1).minimumScaleFactor(0.75)
             if let fraction = presentation.remainingFraction {
                 QuotaBar(remainingFraction: fraction)
+                TimelineView(.periodic(from: .now, by: 60)) { context in
+                    let progress = QuotaMonthProgress(now: context.date, observedAt: observedAt, reset: snapshot.reset)
+                    VStack(alignment: .leading, spacing: 5) {
+                        GeometryReader { geometry in
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(Color.accentColor.opacity(0.12))
+                                Capsule().fill(Color.accentColor)
+                                    .frame(width: geometry.size.width * progress.fraction)
+                            }
+                        }.frame(height: 3)
+                            .environment(\.layoutDirection, .leftToRight)
+                            .accessibilityHidden(true)
+                        HStack(spacing: 4) {
+                            Text("Month elapsed (UTC)")
+                            Spacer(minLength: 0)
+                            Text((progress.fraction * 100).formatted(.number.locale(ActivityText.locale)
+                                .precision(.fractionLength(0...1))) + "%")
+                        }
+                        if progress.canCompareBalance {
+                            let difference = (1 - fraction - progress.fraction) * 100
+                            Text(abs(difference) < 0.5 ? "Usage is in line with month progress"
+                                 : "Usage \(abs(difference).formatted(.number.locale(ActivityText.locale).precision(.fractionLength(0...1)))) pp \(difference > 0 ? "ahead of" : "behind") month progress")
+                        } else {
+                            Text("Refresh balance to compare usage pace")
+                        }
+                    }
+                    .font(.system(size: 9)).foregroundStyle(.secondary)
+                    .help("Calendar-month progress in UTC, measured left to right like used quota. This is a linear reference, not a billing-period claim or spending forecast. pp means percentage points. A balance older than 15 minutes or past its reset is not compared.")
+                }
             }
         }
     }

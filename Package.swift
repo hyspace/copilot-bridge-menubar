@@ -12,7 +12,7 @@ let package = Package(
         .target(name: "BridgeUI", dependencies: ["BridgeCore", "BridgeRuntime"]),
         .executableTarget(name: "BridgeMenuBar", dependencies: ["BridgeUI", "BridgeRuntime"]),
         .testTarget(name: "BridgeCoreTests", dependencies: ["BridgeCore", "CSQLite"]),
-        .testTarget(name: "BridgeRuntimeTests", dependencies: ["BridgeRuntime", "BridgeCore"],
+        .testTarget(name: "BridgeRuntimeTests", dependencies: ["BridgeRuntime", "BridgeCore", "CSQLite"],
                     resources: [.copy("Fixtures")]),
         .testTarget(name: "BridgeUITests", dependencies: ["BridgeUI", "BridgeRuntime", "BridgeCore", "CSQLite"])
     ],

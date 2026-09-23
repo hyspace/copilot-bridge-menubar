@@ -63,7 +63,10 @@ from a live listener; actual occupied ports remain protected.
 - Last 200 diagnostic lines only, 64 KiB line framing, redaction and 8 KiB log truncation.
 - Rotating logs (about 2 MiB active plus three historical files).
 - SQLite WAL with checkpoints; UTC event timestamps aggregate by local date.
-  Hourly maintenance retains two days of dedup IDs and 730 days of daily totals.
+  Hourly maintenance retains four days of dedup IDs and 730 days of daily totals.
+  A private typed-metadata journal survives failed writes and is replayed every
+  30 seconds within the three-day event acceptance window. Incompatible
+  provider-aware schemas fail closed before any migration or cleanup.
 - A 26-week native activity grid displays token totals and server-reported request
   credits. Remaining account quota is a separate card; see `activity.md`.
 - Retry-response observation is capped at one second and 4 MiB. Repeated stream
