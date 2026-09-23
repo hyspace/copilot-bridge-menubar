@@ -23,9 +23,13 @@ MODEL = {
     "object": "model", "policy": {"state": "enabled"},
     "capabilities": {"type": "chat", "family": "gpt-6-astra", "tokenizer": "o200k_base",
         "limits": {"max_context_window_tokens": 1000000, "max_prompt_tokens": 872000, "max_output_tokens": 128000},
-        "supports": {"tool_calls": True, "streaming": True, "reasoning_effort": ["medium"]}},
+        "supports": {"tool_calls": True, "streaming": True,
+            "reasoning_effort": ["low","medium","high","xhigh","max"]}},
     "supported_endpoints": ["/responses"]
 }
+KNOWN_MODEL = json.loads(json.dumps(MODEL))
+KNOWN_MODEL["id"] = KNOWN_MODEL["name"] = KNOWN_MODEL["capabilities"]["family"] = "gpt-5.6-luna"
+KNOWN_MODEL["capabilities"]["supports"]["reasoning_effort"] = ["none","low","medium","high","xhigh","max"]
 
 class Mock(http.server.BaseHTTPRequestHandler):
     def log_message(self, *_): pass
@@ -38,12 +42,15 @@ class Mock(http.server.BaseHTTPRequestHandler):
         self.wfile.write(data)
     def do_GET(self):
         assert self.path.startswith("/models"), self.path
-        self.send(json.dumps({"object": "list", "data": [MODEL]}))
+        self.send(json.dumps({"object": "list", "data": [MODEL, KNOWN_MODEL]}))
     def do_POST(self):
         assert self.headers.get("Authorization") == "Bearer FAKE_COPILOT_TEST_TOKEN"
         assert self.headers.get("ChatGPT-Account-ID") is None, "OpenAI identity leaked upstream"
         body = json.loads(self.rfile.read(int(self.headers["content-length"])))
         UPSTREAM_CALLS.append(body.get("input"))
+        if body.get("input") == "hello":
+            assert body["model"] == "gpt-5.6-luna"
+            assert body["reasoning"]["effort"] == "max", "Advertised max was downgraded in the compiled backend"
         if self.path == "/chat/completions":
             assert body["stream_options"]["include_usage"] is True
             chunks = [
@@ -132,10 +139,15 @@ with tempfile.TemporaryDirectory(prefix="cbm-integration-") as directory:
             assert fetch(p, "/v1/responses")[0] == 404  # HTTP GET is not WebSocket.
             status, data = fetch(p, "/v1/models?client_version=0.153.3")
             assert status == 200 and json.loads(data)["models"][0]["slug"] == "gpt-6-astra"
+            catalog = {item["slug"]: item for item in json.loads(data)["models"]}
+            for fixture in [MODEL, KNOWN_MODEL]:
+                assert [level["effort"] for level in catalog[fixture["id"]]["supported_reasoning_levels"]] == \
+                    fixture["capabilities"]["supports"]["reasoning_effort"]
             for text in ["hello", "test-413", "test-interrupt", "test-billing-only", "test-free",
                          "test-large-completion", "test-sibling-usage"] + ["load-test"] * 100:
-                status, data = fetch(p, "/v1/responses",
-                    body={"model":"gpt-6-astra","input":text,"stream":True})
+                body = {"model":"gpt-6-astra","input":text,"stream":True}
+                if text == "hello": body.update(model="gpt-5.6-luna", reasoning={"effort":"max"})
+                status, data = fetch(p, "/v1/responses", body=body)
                 assert status == (413 if text == "test-413" else 200)
                 if text == "hello": assert "你好" in data.decode()
             status, data = fetch(p, "/v1/chat/completions", body={"model":"gpt-4o","stream":True,
@@ -197,5 +209,5 @@ current = subprocess.run(["lsof","-tiTCP:4142","-sTCP:LISTEN"],capture_output=Tr
 assert ORIGINAL_PID == current, "Protected listener identity changed"
 print("PASS: compiled arm64 backend, 108 keyless fake requests, token/billing/413/interruption,")
 print("      large completion events, sibling usage, final Chat usage-only chunks,")
-print("      catalog compatibility, no config writes, port conflict, parent-death cleanup.")
+print("      upstream reasoning parity, max forwarding, no config writes, port conflict, parent-death cleanup.")
 print(f"Protected 4142 listener unchanged: {current or '(none)'}")
